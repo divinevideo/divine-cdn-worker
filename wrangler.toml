@@ -1,0 +1,120 @@
+name = "blossom-sdk-worker"
+main = "src/index.mjs"
+compatibility_date = "2024-08-01"
+account_id = "c84e7a9bf7ed99cb41b8e73566568c75"
+
+# Enable observability and logs
+[observability]
+enabled = true
+
+[observability.logs]
+enabled = true
+head_sampling_rate = 1
+invocation_logs = true
+
+# Default (used by wrangler dev without --env)
+[vars]
+DEV_AUTH_MODE = "true"
+STREAM_DOMAIN = "cdn.divine.video"
+STREAM_CUSTOMER_DOMAIN = "customer-4c3uhd5qzuhwz9hu.cloudflarestream.com"
+REQUIRE_PROOFMODE_FOR_VIDEOS = "false"  # Set to "true" after launch
+
+[[kv_namespaces]]
+binding = "MEDIA_KV"
+id = "fc3fb1f988894752ae62462d5d0d2222"
+
+# R2 bucket binding for blob storage
+[[r2_buckets]]
+binding = "R2_BLOBS"
+bucket_name = "nostrvine-media"
+
+# Shared moderation KV namespace (shared with divine-moderation-service)
+[[kv_namespaces]]
+binding = "MODERATION_KV"
+id = "10af689fc82140ed9159eef3c1c47079"
+
+# D1 Database for queryable webhook history
+# Create database: wrangler d1 create blossom-webhook-events
+# Then run: wrangler d1 execute blossom-webhook-events --file=./schema-d1.sql
+[[d1_databases]]
+binding = "DB"
+database_name = "blossom-webhook-events"
+database_id = "829f06cf-294b-4491-8611-30fc53df2589"
+
+# Production environment
+[env.production]
+name = "blossom-sdk-worker-prod"
+account_id = "c84e7a9bf7ed99cb41b8e73566568c75"
+routes = [
+  { pattern = "blossom.divine.video/*", zone_name = "divine.video" },
+  { pattern = "cdn.divine.video/*", zone_name = "divine.video" }
+]
+
+# Enable observability and logs for production
+[env.production.observability]
+enabled = true
+
+[env.production.observability.logs]
+enabled = true
+head_sampling_rate = 1
+invocation_logs = true
+
+[env.production.vars]
+DEV_AUTH_MODE = "false"  # CRITICAL: Enforce signature verification in production
+STREAM_DOMAIN = "cdn.divine.video"
+STREAM_CUSTOMER_DOMAIN = "customer-4c3uhd5qzuhwz9hu.cloudflarestream.com"
+MODERATION_ENABLED = "true"
+REQUIRE_PROOFMODE_FOR_VIDEOS = "false"  # Set to "true" after launch
+
+# BunnyStream Integration Configuration
+# Feature flag system allows gradual rollout and easy rollback
+# Set BUNNY_STREAM_ENABLED="true" to enable, then use BUNNY_ROLLOUT_PERCENTAGE to control traffic
+# BUNNY_UPLOAD_DEST controls upload behavior: "r2" (default), "bunny", or "dual"
+
+# Enable/disable BunnyStream integration (master switch)
+BUNNY_STREAM_ENABLED = "true"
+
+# BunnyStream library ID (get from Bunny.net dashboard)
+BUNNY_STREAM_LIBRARY_ID = "515420"
+
+# Upload destination: "r2" (Cloudflare R2 only), "bunny" (BunnyStream only), or "dual" (hash-based split)
+# Using "bunny" to route all videos to BunnyStream for HLS encoding
+BUNNY_UPLOAD_DEST = "bunny"
+
+# Percentage of traffic to route through BunnyStream (0-100)
+# Only applies when BUNNY_STREAM_ENABLED="true"
+# Use for gradual rollout: start at 0-10%, monitor, then increase
+BUNNY_ROLLOUT_PERCENTAGE = "100"
+
+# BunnyStream pull zone hostname (custom domain via CNAME)
+# Default BunnyCDN hostname: vz-b47056a0-e05.b-cdn.net
+BUNNY_STREAM_PULL_ZONE = "stream.divine.video"
+
+# BunnyStream API endpoint
+BUNNY_API_ENDPOINT = "https://video.bunnycdn.com"
+
+[[env.production.kv_namespaces]]
+binding = "MEDIA_KV"
+id = "effcf271031647f0947983f5f4211aa2"
+
+[[env.production.kv_namespaces]]
+binding = "MODERATION_KV"
+id = "10af689fc82140ed9159eef3c1c47079"
+
+[[env.production.r2_buckets]]
+binding = "R2_BLOBS"
+bucket_name = "nostrvine-media"
+
+[[env.production.d1_databases]]
+binding = "DB"
+database_name = "blossom-webhook-events"
+database_id = "829f06cf-294b-4491-8611-30fc53df2589"
+
+# Queue producer for video moderation
+[[env.production.queues.producers]]
+binding = "MODERATION_QUEUE"
+queue = "video-moderation-queue"
+
+# Scheduled tasks (every 30 minutes)
+[env.production.triggers]
+crons = ["*/30 * * * *"]

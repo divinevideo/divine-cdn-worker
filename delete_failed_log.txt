@@ -1,0 +1,96 @@
+Fetching failed videos (status 5 and 6)...
+Processing page 1...
+  Deleting failed video: f88a5c2e-6d58-4953-9912-015888b4725d
+  Deleting failed video: 6162c757-df58-4b7b-a6ff-1d03e796dda7
+  Deleting failed video: 795ce698-1138-4272-adb1-32b753c35969
+  Deleting failed video: 4d28b0a6-da5b-4be7-8ba9-52ee6e2ab58b
+  Deleting failed video: ed7cdae3-6df0-4ffb-8024-f15647b753e2
+  Deleting failed video: 3c7dbf4f-07c7-45a3-bca7-9fa5e888f699
+  Deleting failed video: 4c3234f7-6e67-45ab-ad2c-bb24a59e1772
+  Deleting failed video: 5cbdd974-0895-4b57-8eae-01ea9206f296
+  Deleting failed video: aae9f703-d88d-4b0f-bfbe-ee92369bec70
+  Deleted 9 failed videos on page 1
+Processing page 2...
+  Deleting failed video: 03a4429f-f842-4065-b411-fb661fbd4af7
+  Deleting failed video: 95f9e26c-19f0-4cea-b900-d2670408c3f0
+  Deleting failed video: 4a004293-7ede-406b-b13a-4abcc4bfe62b
+  Deleting failed video: b989301f-9373-43ac-9ff1-bd02cbc46fa9
+  Deleting failed video: efd1ace6-f83a-4621-83b5-c447c93dc789
+  Deleting failed video: 1f48fcb6-b472-4599-8dc5-4c50588843c4
+  Deleting failed video: 6c9b075d-4896-4424-9d01-af78dcf34b62
+  Deleting failed video: 679cf363-1949-48c8-b898-8c9200b33e21
+  Deleting failed video: 7ef47a4d-782d-46a8-997d-05e0defeedba
+  Deleted 9 failed videos on page 2
+Processing page 3...
+  Deleting failed video: 70752bc9-e5fc-4808-9f1f-39d98dc88f12
+  Deleting failed video: 55b393a8-c171-4da3-b016-03ac53bd3f4b
+  Deleting failed video: 9cae0a3f-9260-4d19-bf6c-e10488dd722f
+  Deleting failed video: 90e4d496-a761-4ce6-a3e7-451754aec17e
+  Deleting failed video: 6a8aeb02-83a2-4e52-9e12-03cd0f973921
+  Deleting failed video: 1b3a89ce-e44c-45b7-9736-3bcd1cc3f2d2
+  Deleted 6 failed videos on page 3
+Processing page 4...
+  Deleting failed video: 4b848463-4c0f-425a-a600-f5b9b23889ed
+  Deleting failed video: dc1cb93a-f223-4ec8-8bfc-e6c115904863
+  Deleting failed video: 36f468f6-f37c-4c8f-8d87-714ea5ea633f
+  Deleting failed video: bd622b57-6c75-4180-b184-d8444cdddd92
+  Deleting failed video: 1e96e097-bea2-4246-97b3-dda8f6371cba
+  Deleting failed video: 95d1c9ac-b963-4268-a802-faf885f06956
+  Deleting failed video: 0861d2f2-3047-4df4-aec2-01ea6a6865d5
+  Deleting failed video: 13f5cfc5-637f-45a0-b250-2f5975d513b8
+  Deleting failed video: 17a4dea8-aafe-4f47-bfae-508ff604a4ff
+  Deleting failed video: 1c625d1e-abae-499b-b84d-82ce96ba448b
+  Deleting failed video: 6acd1ada-7e0e-4bd5-8345-1dfd00078ed8
+  Deleting failed video: 91363838-f9d9-48eb-aac4-7fda36d66176
+  Deleting failed video: 9ce57207-be63-493b-8f23-938c5c5c9dd5
+  Deleting failed video: f8b58f90-cc7f-4f22-9d7d-cabeebf4b741
+  Deleting failed video: 5acb7b59-4621-4b3a-ab66-a1fefc339b74
+  Deleting failed video: 6f49ea1e-8bd6-4e10-93ae-ca20cb4cca74
+  Deleting failed video: 567a5ce1-76aa-4f14-9480-1747d2b7fa08
+  Deleting failed video: 0a9b8f85-7dca-4a6e-983e-a2a3866c4b23
+  Deleted 18 failed videos on page 4
+Processing page 5...
+  Deleting failed video: 9724b505-5593-4ee5-b220-8c789ad6bab3
+  Deleting failed video: a18b5254-e56b-4095-9ce6-7fb70236c781
+  Deleting failed video: dc475064-6d5c-44ea-87a7-08af6537ab8e
+  Deleting failed video: 076986a4-8c6b-40af-9007-17ddfcfd14ac
+  Deleting failed video: 51b7068d-b0c1-4653-ac9e-f0dcafafcf04
+  Deleting failed video: cff9213d-27bd-451e-ad72-66054a35c646
+  Deleting failed video: 0398f47c-08f9-4751-883b-1d113b7973f7
+  Deleting failed video: 8e98731a-dd29-4400-96ae-bf7b57fe15c0
+  Deleting failed video: 5697e409-89c5-4a6b-ba06-1cc1130b3513
+  Deleting failed video: 2869c534-2fa4-4f36-86f4-1e5da2e986dc
+  Deleting failed video: 621fd87e-d893-49bd-a8b1-fdf296ebdd4b
+  Deleting failed video: d0279bb3-a1d4-4dd6-9bef-9cf68db5d1eb
+  Deleting failed video: e248228c-5f3d-4c13-8551-02c2b093b5a9
+  Deleting failed video: fd1d8aa3-9ce2-41b4-993f-338ceadf47a9
+  Deleting failed video: b9140172-6580-4ba0-8257-ce61a6ee429b
+  Deleting failed video: 315ff126-7a88-495c-82f9-07b739f08439
+  Deleting failed video: c10e29e1-7ea8-48bb-8eee-8ee7029ac084
+  Deleting failed video: df1a78ff-5c28-40be-877c-66dfe61d9f90
+  Deleting failed video: c06de6e6-ee66-4a40-93fb-9dfe6f237d35
+  Deleted 19 failed videos on page 5
+Processing page 6...
+  Deleting failed video: eadc052d-6c30-4afe-9e1d-2f115b2f1f2a
+  Deleting failed video: c84a32ce-6fa3-4613-b37a-a21101829b28
+  Deleting failed video: 8bed05d8-300a-4d3e-8755-ff17e9f15520
+  Deleting failed video: 70e995b1-aea0-44cb-b1e1-1cdafb9c99f4
+  Deleting failed video: 6e950436-f54d-4bcc-b2cd-b7b2976aeaec
+  Deleting failed video: ebb22df6-7567-4441-903f-4b597b5bb08f
+  Deleting failed video: baa6aa8a-98dc-4e5e-975d-5284d741229b
+  Deleting failed video: 2c3554dd-c342-42be-9f15-1a30870aa59d
+  Deleting failed video: 933cf2b7-d138-41c2-b07a-2f344737af98
+  Deleting failed video: 82b40800-2182-4a96-8485-f9835fd29dd9
+  Deleting failed video: 0643eb51-aeeb-4a54-ad27-cf5e6ebab41f
+  Deleting failed video: a21579f9-413c-4180-bfdd-72fccff47ce1
+  Deleting failed video: 72a3f118-0d25-48fd-aa39-8ed7faabd9be
+  Deleting failed video: f649774d-d99f-437c-95fd-ca688ec73f7f
+  Deleting failed video: 9fe012e3-be46-4d76-b5ce-3ef17e1d9662
+  Deleting failed video: 84b2c22c-84f1-4eff-b6e2-1e66d1f546da
+  Deleting failed video: 1de1216d-62df-437c-91a0-1095b3ae386a
+  Deleted 17 failed videos on page 6
+Processing page 7...
+No more failed videos found.
+
+====================
+Total failed videos deleted: 78
