@@ -50,6 +50,26 @@ routes = [
   { pattern = "cdn.divine.video/*", zone_name = "divine.video" }
 ]
 
+# CACHE CONFIGURATION NOTES:
+#
+# Cloudflare Cache Reserve should be enabled for divine.video zone to provide
+# persistent caching for video content (reduces R2 egress and worker invocations).
+#
+# To enable Cache Reserve:
+# 1. Go to Cloudflare Dashboard → divine.video → Caching → Cache Reserve
+# 2. Enable Cache Reserve for the zone
+# 3. Create Cache Rule:
+#    - Match: cdn.divine.video/* OR blossom.divine.video/*
+#    - Cache eligibility: Eligible for cache
+#    - Cache TTL: Respect origin (31536000 seconds / 1 year)
+#    - Include Range requests
+#
+# Benefits:
+# - Video range requests (seeking) are cached persistently
+# - Reduces R2 egress costs
+# - Reduces worker invocations (cache hits bypass worker)
+# - Popular content stays cached longer
+
 # Enable observability and logs for production
 [env.production.observability]
 enabled = true

@@ -84,7 +84,14 @@ export default {
 
           if (cachedResponse) {
             console.log(`[Cache HIT] ${url.pathname}`);
-            return cachedResponse;
+            // Add custom header to indicate cache hit
+            const headers = new Headers(cachedResponse.headers);
+            headers.set('X-Cache-Status', 'HIT');
+            return new Response(cachedResponse.body, {
+              status: cachedResponse.status,
+              statusText: cachedResponse.statusText,
+              headers
+            });
           }
 
           console.log(`[Cache MISS] ${url.pathname}`);
@@ -1961,7 +1968,14 @@ async function cacheAndReturn(response, request, url) {
     console.error('[Cache ERROR] Failed to write cache:', cacheError);
   }
 
-  return response;
+  // Add custom header to indicate cache miss (first request)
+  const headers = new Headers(response.headers);
+  headers.set('X-Cache-Status', 'MISS');
+  return new Response(response.body, {
+    status: response.status,
+    statusText: response.statusText,
+    headers
+  });
 }
 
 /**
@@ -1978,11 +1992,6 @@ function shouldCache(response, request) {
     return false;
   }
 
-  // Don't cache range requests (206 Partial Content)
-  if (response.status === 206) {
-    return false;
-  }
-
   // Don't cache auth-required responses (need per-request validation)
   if (response.status === 401 || response.status === 403) {
     return false;
@@ -1993,15 +2002,15 @@ function shouldCache(response, request) {
     return false;
   }
 
-  // Don't cache if request has Range header (even if response is 200)
-  if (request.headers.get('range')) {
-    return false;
-  }
-
   // Cache successful responses and client errors (immutable decisions)
-  // 200 OK, 204 No Content (OPTIONS), 302 Redirect, 400 Bad Request, 404 Not Found, 451 Unavailable
+  // 200 OK, 204 No Content (OPTIONS), 206 Partial Content (range requests),
+  // 302 Redirect, 400 Bad Request, 404 Not Found, 451 Unavailable
+  //
+  // NOTE: Range requests (206) are now cached to improve video seeking performance
+  // For SHA256-addressed content, each range is immutable and safe to cache
   if (response.status === 200 ||
       response.status === 204 ||
+      response.status === 206 ||
       response.status === 302 ||
       response.status === 400 ||
       response.status === 404 ||
