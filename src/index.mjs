@@ -71,7 +71,9 @@ export default {
 
       // Cloudflare Cache API - Early exit for cached content
       // Only check cache for GET/HEAD requests (immutable content)
-      if (method === 'GET' || method === 'HEAD') {
+      // SKIP cache for Range requests - they need to be handled by the origin
+      // to correctly return 206 Partial Content responses
+      if ((method === 'GET' || method === 'HEAD') && !request.headers.has('range')) {
         try {
           const cache = caches.default;
           // Normalize cache key (use GET method for both GET and HEAD)
@@ -2003,14 +2005,15 @@ function shouldCache(response, request) {
   }
 
   // Cache successful responses and client errors (immutable decisions)
-  // 200 OK, 204 No Content (OPTIONS), 206 Partial Content (range requests),
-  // 302 Redirect, 400 Bad Request, 404 Not Found, 451 Unavailable
+  // 200 OK, 204 No Content (OPTIONS), 302 Redirect, 400 Bad Request,
+  // 404 Not Found, 451 Unavailable
   //
-  // NOTE: Range requests (206) are now cached to improve video seeking performance
-  // For SHA256-addressed content, each range is immutable and safe to cache
+  // NOTE: 206 Partial Content responses are NOT cached. Instead, we cache
+  // full 200 responses and let range requests be handled fresh each time.
+  // This allows the worker to correctly return 206 with proper Content-Range
+  // headers for each range request.
   if (response.status === 200 ||
       response.status === 204 ||
-      response.status === 206 ||
       response.status === 302 ||
       response.status === 400 ||
       response.status === 404 ||
