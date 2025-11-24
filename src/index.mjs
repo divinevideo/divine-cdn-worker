@@ -1961,7 +1961,7 @@ async function cacheAndReturn(response, request, url) {
       method: 'GET'
     });
 
-    // Clone response since Response bodies are single-use streams
+    // Clone response for caching since Response bodies are single-use streams
     await cache.put(cacheKey, response.clone());
 
     console.log(`[Cache PUT] ${url.pathname} - status:${response.status}`);
@@ -1971,11 +1971,13 @@ async function cacheAndReturn(response, request, url) {
   }
 
   // Add custom header to indicate cache miss (first request)
-  const headers = new Headers(response.headers);
+  // Use another clone to avoid consuming the original response body
+  const clonedResponse = response.clone();
+  const headers = new Headers(clonedResponse.headers);
   headers.set('X-Cache-Status', 'MISS');
-  return new Response(response.body, {
-    status: response.status,
-    statusText: response.statusText,
+  return new Response(clonedResponse.body, {
+    status: clonedResponse.status,
+    statusText: clonedResponse.statusText,
     headers
   });
 }
