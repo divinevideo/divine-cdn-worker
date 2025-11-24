@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **CRITICAL**: HTTP Range Request support for video seeking/scrubbing
+  - Mobile video players (iOS AVPlayer, Android ExoPlayer) require range request support
+  - Worker cache was serving full 200 responses to range requests instead of 206 Partial Content
+  - Fixed by skipping worker cache for requests with Range header
+  - Now correctly returns 206 status with Content-Range headers
+  - Video seeking and scrubbing now works correctly in mobile apps
+  - Note: Previously cached files required Cloudflare cache purge to work correctly
+
+### Changed
+- Removed temporary debug/test/backfill scripts to clean up repository
+- Moved test files to organized `tests/` and `scripts/` directories
+
 ## [0.2.0] - 2025-10-28
 
 ### Security
