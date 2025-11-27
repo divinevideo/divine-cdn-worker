@@ -3,6 +3,7 @@
 
 import { VideoStatus, VideoStatusLabel } from './bunny-client.mjs';
 import { logWebhookEvent, updateVideoMetadata } from './d1-logger.mjs';
+import { extractFirstFrame, shouldAttemptMediaTransformation } from '../thumbnail-extractor.mjs';
 
 /**
  * Webhook event types from BunnyStream
@@ -277,17 +278,48 @@ export class BunnyWebhookHandler {
     // Generate HLS URL
     const hlsUrl = `https://${pullZone}/${videoId}/playlist.m3u8`;
 
-    // Download and upload thumbnail to Blossom
+    // Generate thumbnail - try Cloudflare Media Transformations first, fallback to BunnyStream
     let thumbnailSha256 = null;
-    let thumbnailUrl = `https://${pullZone}/${videoId}/thumbnail.jpg`;
+    let thumbnailSource = null;
+    const bunnyThumbnailUrl = `https://${pullZone}/${videoId}/thumbnail.jpg`;
+    const cdnDomain = env.STREAM_DOMAIN || 'cdn.divine.video';
+
+    // Get video size for CF limit check (from videoData or default to 0)
+    const videoSize = videoData?.size || 0;
 
     try {
-      // Download thumbnail from BunnyStream
-      const thumbnailResponse = await fetch(thumbnailUrl);
+      let thumbnailData = null;
 
-      if (thumbnailResponse.ok) {
-        const thumbnailData = await thumbnailResponse.arrayBuffer();
+      // Try Cloudflare Media Transformations first (extracts first frame)
+      if (sha256 && shouldAttemptMediaTransformation(env, videoSize)) {
+        console.log(`[Thumbnail] Attempting Cloudflare Media Transformations for ${sha256.substring(0, 12)}...`);
+        const cfResult = await extractFirstFrame(sha256, env);
 
+        if (cfResult.success) {
+          thumbnailData = cfResult.data;
+          thumbnailSource = 'cloudflare';
+          console.log(`[Thumbnail] ✅ Cloudflare extraction succeeded (${thumbnailData.byteLength} bytes)`);
+        } else {
+          console.log(`[Thumbnail] Cloudflare extraction failed: ${cfResult.error}${cfResult.code ? ` (${cfResult.code})` : ''}`);
+        }
+      }
+
+      // Fallback to BunnyStream thumbnail if CF failed or wasn't attempted
+      if (!thumbnailData) {
+        console.log(`[Thumbnail] Falling back to BunnyStream thumbnail...`);
+        const bunnyResponse = await fetch(bunnyThumbnailUrl);
+
+        if (bunnyResponse.ok) {
+          thumbnailData = await bunnyResponse.arrayBuffer();
+          thumbnailSource = 'bunnystream';
+          console.log(`[Thumbnail] ✅ BunnyStream thumbnail downloaded (${thumbnailData.byteLength} bytes)`);
+        } else {
+          console.warn(`[Thumbnail] Failed to download BunnyStream thumbnail: ${bunnyResponse.status}`);
+        }
+      }
+
+      // If we have thumbnail data, store it
+      if (thumbnailData) {
         // Calculate SHA-256 of thumbnail
         const hashBuffer = await crypto.subtle.digest('SHA-256', thumbnailData);
         const hashArray = Array.from(new Uint8Array(hashBuffer));
@@ -302,27 +334,24 @@ export class BunnyWebhookHandler {
         });
 
         // Store thumbnail metadata in KV
-        const cdnDomain = env.STREAM_DOMAIN || 'cdn.divine.video';
         const thumbnailBlobKey = `blob:${thumbnailSha256}`;
         const thumbnailMetadata = {
           sha256: thumbnailSha256,
           size: thumbnailData.byteLength,
           type: 'image/jpeg',
           uploaded: Math.floor(Date.now() / 1000),
-          source: 'bunnystream',
+          source: thumbnailSource,
           videoSha256: sha256,
           videoId: videoId
         };
 
         await env.MEDIA_KV.put(thumbnailBlobKey, JSON.stringify(thumbnailMetadata));
 
-        console.log(`✅ Thumbnail uploaded to Blossom: ${thumbnailSha256} (${thumbnailData.byteLength} bytes)`);
+        console.log(`✅ Thumbnail uploaded to Blossom: ${thumbnailSha256} (source: ${thumbnailSource})`);
         console.log(`   Thumbnail URL: https://${cdnDomain}/${thumbnailSha256}.jpg`);
-      } else {
-        console.warn(`Failed to download thumbnail from ${thumbnailUrl}: ${thumbnailResponse.status}`);
       }
     } catch (error) {
-      console.error(`Error uploading thumbnail to Blossom:`, error);
+      console.error(`[Thumbnail] Error processing thumbnail:`, error);
       // Continue anyway - thumbnail upload is non-critical
     }
 
@@ -349,13 +378,15 @@ export class BunnyWebhookHandler {
     }
 
     // Update bunny:video:{videoId} with ready status
-    const cdnDomain = env.STREAM_DOMAIN || 'cdn.divine.video';
+    // Note: cdnDomain already declared above in thumbnail section
+    const thumbnailUrl = thumbnailSha256 ? `https://${cdnDomain}/${thumbnailSha256}.jpg` : bunnyThumbnailUrl;
     const updatedVideoData = {
       ...videoData,
       status: isDurationRejected ? 'rejected' : 'ready',
       hlsUrl,
       thumbnailUrl,
       thumbnailSha256,
+      thumbnailSource,
       thumbnailBlossomUrl: thumbnailSha256 ? `https://${cdnDomain}/${thumbnailSha256}.jpg` : null,
       duration: payload.Length || null,
       durationRejected: isDurationRejected,
@@ -372,9 +403,10 @@ export class BunnyWebhookHandler {
     // Update blob:{sha256} with Bunny streaming info
     const blobKey = `blob:${sha256}`;
     const blobDataStr = await env.MEDIA_KV.get(blobKey);
+    let blobData = null;
 
     if (blobDataStr) {
-      const blobData = JSON.parse(blobDataStr);
+      blobData = JSON.parse(blobDataStr);
 
       blobData.bunny = {
         videoId,
@@ -384,6 +416,7 @@ export class BunnyWebhookHandler {
         hlsUrl,
         thumbnailUrl,
         thumbnailSha256,
+        thumbnailSource,
         thumbnailBlossomUrl: thumbnailSha256 ? `https://${cdnDomain}/${thumbnailSha256}.jpg` : null,
         duration: payload.Length || null,
         encodedAt: Date.now()

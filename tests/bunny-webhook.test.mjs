@@ -89,9 +89,11 @@ describe('BunnyWebhookHandler', () => {
     mockEnv = {
       MEDIA_KV: mockKV,
       BUNNY_SIGNING_KEY: 'test_secret_key_12345',
+      BUNNY_WEBHOOK_SECRET: 'test_secret_key_12345',  // Alias for tests using old name
       BUNNY_WEBHOOK_TOKEN: 'test_bearer_token_67890',
       BUNNY_STREAM_PULL_ZONE: 'vz-test123.b-cdn.net',
-      BUNNY_STREAM_LIBRARY_ID: '12345'
+      BUNNY_STREAM_LIBRARY_ID: '12345',
+      STREAM_DOMAIN: 'cdn.divine.video'
     };
   });
 
@@ -294,7 +296,7 @@ describe('BunnyWebhookHandler', () => {
         VideoGuid: videoId,
         VideoLibraryId: 12345,
         Status: VideoStatus.FINISHED,
-        Length: 120,
+        Length: 6,  // Under 7 second duration limit
         EncodeProgress: 100,
         ThumbnailFileName: 'https://vz-test123.b-cdn.net/video-guid-123/thumbnail.jpg',
         Timestamp: new Date().toISOString()
@@ -306,14 +308,14 @@ describe('BunnyWebhookHandler', () => {
       const videoData = JSON.parse(await mockKV.get(`bunny:video:${videoId}`));
       assert.strictEqual(videoData.status, 'ready');
       assert.strictEqual(videoData.hlsUrl, `https://vz-test123.b-cdn.net/${videoId}/playlist.m3u8`);
-      assert.strictEqual(videoData.duration, 120);
+      assert.strictEqual(videoData.duration, 6);
       assert.ok(videoData.encodedAt);
 
       // Verify blob updated
       const blobData = JSON.parse(await mockKV.get(`blob:${sha256}`));
       assert.strictEqual(blobData.bunny.status, 'ready');
       assert.strictEqual(blobData.bunny.hlsUrl, `https://vz-test123.b-cdn.net/${videoId}/playlist.m3u8`);
-      assert.strictEqual(blobData.bunny.duration, 120);
+      assert.strictEqual(blobData.bunny.duration, 6);
       assert.strictEqual(blobData.provider, 'bunny');
     });
 
@@ -336,7 +338,7 @@ describe('BunnyWebhookHandler', () => {
         VideoGuid: videoId,
         VideoLibraryId: 12345,
         Status: VideoStatus.FINISHED,
-        Length: 90
+        Length: 5  // Under 7 second duration limit
       };
 
       await handler.handleVideoEncoded(payload, mockEnv);
@@ -478,11 +480,12 @@ describe('BunnyWebhookHandler', () => {
       const invalidBody = 'invalid json';
 
       // Create valid signature for invalid JSON (signature will pass, but JSON parsing will fail)
+      // Note: Bunny uses SHA-1 for webhook signatures
       const encoder = new TextEncoder();
       const key = await crypto.subtle.importKey(
         'raw',
-        encoder.encode(mockEnv.BUNNY_WEBHOOK_SECRET),
-        { name: 'HMAC', hash: 'SHA-256' },
+        encoder.encode(mockEnv.BUNNY_SIGNING_KEY),
+        { name: 'HMAC', hash: 'SHA-1' },
         false,
         ['sign']
       );
@@ -501,7 +504,8 @@ describe('BunnyWebhookHandler', () => {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'X-Bunny-Signature': signature
+          'X-Bunny-Signature': signature,
+          'Authorization': 'Bearer test_bearer_token_67890'
         },
         body: invalidBody
       });
@@ -520,7 +524,7 @@ describe('BunnyWebhookHandler', () => {
       const payload = {
         VideoGuid: videoId,
         Status: VideoStatus.FINISHED,
-        Length: 100,
+        Length: 5,  // Under 7 second duration limit
         Timestamp: new Date().toISOString()
       };
 
