@@ -14,7 +14,7 @@ invocation_logs = true
 
 # Default (used by wrangler dev without --env)
 [vars]
-DEV_AUTH_MODE = "true"
+DEV_AUTH_MODE = "false"
 STREAM_DOMAIN = "cdn.divine.video"
 STREAM_CUSTOMER_DOMAIN = "customer-4c3uhd5qzuhwz9hu.cloudflarestream.com"
 REQUIRE_PROOFMODE_FOR_VIDEOS = "false"  # Set to "true" after launch
