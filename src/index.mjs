@@ -8,6 +8,7 @@ import { BunnyWebhookHandler } from './streaming/bunny-webhook.mjs';
 import { PlaybackResolver } from './streaming/playback-resolver.mjs';
 import { selectUploadStrategy, BunnyUploadHandler } from './streaming/upload-strategy.mjs';
 import { handleBunnyAPI } from './streaming/bunny-api.mjs';
+import { validateBud01Event } from './bud01-validator.mjs';
 
 /**
  * Cloudflare Worker entry point
@@ -342,8 +343,8 @@ async function handleGetBlob(sha256, isHead, blobStorage, metadataStore, req, en
         });
       }
 
-      // Verify auth and check preferences
-      const auth = await verifyBlossomAuth(req, env);
+      // Verify auth and check preferences (use 'get' action for retrieving content)
+      const auth = await verifyBlossomAuth(req, env, { action: 'get' });
       if (!auth) {
         return new Response(JSON.stringify({
           error: 'invalid_auth',
@@ -390,7 +391,7 @@ async function handleGetBlob(sha256, isHead, blobStorage, metadataStore, req, en
   // Check if blob exists in metadata
   const metadata = await metadataStore.getBlob(sha256);
   if (!metadata) {
-    return new Response('Not Found', { status: 404 });
+    return jsonResponse(404, { error: 'not_found', message: 'Blob not found' });
   }
 
   // For HEAD requests, return just headers
@@ -551,10 +552,10 @@ async function handleUploadsFile(pathname, isHead, req, env) {
  * Handle blob upload (PUT /upload)
  */
 async function handleUploadBlob(request, blobStorage, metadataStore, env, ctx) {
-  // Verify authentication
-  const auth = await verifyBlossomAuth(request, env);
+  // Verify authentication with BUD-01 action validation
+  const auth = await verifyBlossomAuth(request, env, { action: 'upload' });
   if (!auth) {
-    return jsonResponse(401, { error: 'unauthorized' });
+    return jsonResponse(401, { error: 'unauthorized', message: 'Unauthorized: missing or invalid Nostr auth event' });
   }
 
   // Get blob data
@@ -574,7 +575,7 @@ async function handleUploadBlob(request, blobStorage, metadataStore, env, ctx) {
   if (authHash && authHash !== sha256) {
     return jsonResponse(400, {
       error: 'hash_mismatch',
-      message: 'SHA-256 in auth does not match uploaded data'
+      message: 'Hash mismatch: SHA-256 in auth does not match uploaded data'
     });
   }
 
@@ -782,22 +783,22 @@ async function handleListBlobs(pubkey, metadataStore) {
  * Handle delete blob request
  */
 async function handleDeleteBlob(request, sha256, blobStorage, metadataStore, env) {
-  // Verify authentication
-  const auth = await verifyBlossomAuth(request, env);
+  // Verify authentication with BUD-01 action validation
+  const auth = await verifyBlossomAuth(request, env, { action: 'delete' });
   if (!auth) {
-    return jsonResponse(401, { error: 'unauthorized' });
+    return jsonResponse(401, { error: 'unauthorized', message: 'Unauthorized: missing or invalid Nostr auth event' });
   }
 
   // Check if blob exists
   const metadata = await metadataStore.getBlob(sha256);
   if (!metadata) {
-    return jsonResponse(404, { error: 'not_found' });
+    return jsonResponse(404, { error: 'not_found', message: 'Blob not found' });
   }
 
   // Check ownership
   const isOwner = await metadataStore.hasBlobOwner(sha256, auth.pubkey);
   if (!isOwner) {
-    return jsonResponse(403, { error: 'forbidden' });
+    return jsonResponse(403, { error: 'forbidden', message: 'You do not own this blob' });
   }
 
   // Delete blob
@@ -810,9 +811,14 @@ async function handleDeleteBlob(request, sha256, blobStorage, metadataStore, env
 
 /**
  * Verify Blossom authentication (kind 24242)
- * Implements full Nostr signature verification per NIP-01
+ * Implements full Nostr signature verification per NIP-01 and BUD-01 tag validation
+ *
+ * @param {Request} request - The incoming request
+ * @param {object} env - Environment bindings
+ * @param {object} options - Validation options
+ * @param {string} options.action - Expected action (upload, get, list, delete)
  */
-async function verifyBlossomAuth(request, env) {
+async function verifyBlossomAuth(request, env, options = {}) {
   const authHeader = request.headers.get('authorization');
 
   if (!authHeader || !authHeader.startsWith('Nostr ')) {
@@ -822,7 +828,7 @@ async function verifyBlossomAuth(request, env) {
   try {
     const base64Event = authHeader.slice(6).trim();
 
-    // Simple pubkey format for dev ONLY
+    // Simple pubkey format for dev ONLY (no BUD-01 validation possible)
     if (env.DEV_AUTH_MODE === 'true' && base64Event.startsWith('pubkey=')) {
       const pubkey = base64Event.slice(7);
       if (pubkey.match(/^[a-f0-9]{64}$/)) {
@@ -836,8 +842,15 @@ async function verifyBlossomAuth(request, env) {
     const eventJson = base64ToString(base64Event);
     const event = JSON.parse(eventJson);
 
-    if (event.kind !== 24242) {
-      console.error(`Invalid event kind: ${event.kind} (expected 24242 for Blossom, got ${event.kind === 27235 ? 'NIP-98' : 'unknown'})`);
+    // Validate BUD-01 compliance (expiration, action, created_at, server)
+    const url = new URL(request.url);
+    const bud01Result = validateBud01Event(event, {
+      action: options.action,
+      serverHost: url.hostname
+    });
+
+    if (!bud01Result.valid) {
+      console.error(`❌ BUD-01 validation failed: ${bud01Result.error} - ${bud01Result.message}`);
       return null;
     }
 
@@ -1067,16 +1080,30 @@ async function handleRetryFailed(request, env) {
 }
 
 /**
- * JSON response helper
+ * JSON response helper with BUD-01 compliant headers
+ *
+ * @param {number} status - HTTP status code
+ * @param {object} body - Response body
+ * @param {object} [extraHeaders] - Additional headers to include
  */
-function jsonResponse(status, body) {
-  return new Response(JSON.stringify(body), {
-    status,
-    headers: {
-      'Content-Type': 'application/json',
-      'Access-Control-Allow-Origin': '*'
-    }
-  });
+function jsonResponse(status, body, extraHeaders = {}) {
+  const headers = {
+    'Content-Type': 'application/json',
+    'Access-Control-Allow-Origin': '*',
+    ...extraHeaders
+  };
+
+  // BUD-01: Add X-Reason header for error responses
+  if (status >= 400 && body.error) {
+    headers['X-Reason'] = body.message || body.error;
+  }
+
+  // BUD-01: Add WWW-Authenticate header for 401 responses
+  if (status === 401) {
+    headers['WWW-Authenticate'] = 'Nostr';
+  }
+
+  return new Response(JSON.stringify(body), { status, headers });
 }
 
 /**

@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Security
+- **BUD-01 Compliance**: Full Blossom auth event validation beyond signature verification
+  - Validates `expiration` tag exists and event hasn't expired
+  - Validates `created_at` is not in the future (with 60s clock skew tolerance)
+  - Validates `t` (action) tag matches the endpoint being accessed (upload, get, delete, list)
+  - Validates optional `server` tag matches this server's hostname
+  - Rejects NIP-98 kind 27235 events (must use Blossom kind 24242)
+  - Prevents replay attacks with expired or future-dated auth events
+  - Prevents cross-endpoint auth reuse (upload event can't be used for delete)
+
+### Added
+- New `src/bud01-validator.mjs` module for BUD-01 tag validation
+- 17 new unit tests for BUD-01 validation (`tests/test_bud01_auth.mjs`)
+- 9 new integration tests for BUD-01 compliance in worker endpoints
+- `WWW-Authenticate: Nostr` header on 401 responses (BUD-01 spec)
+- `X-Reason` header on error responses with descriptive messages (BUD-01 spec)
+
 ### Fixed
 - **CRITICAL**: HTTP Range Request support for video seeking/scrubbing
   - Mobile video players (iOS AVPlayer, Android ExoPlayer) require range request support

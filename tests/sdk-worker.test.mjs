@@ -111,8 +111,8 @@ test('GET /<sha256>: returns 404 for non-existent blob', async () => {
   const res = await worker.fetch(req, env, {});
 
   assert.equal(res.status, 404);
-  const text = await res.text();
-  assert.equal(text, 'Not Found');
+  const body = await res.json();
+  assert.equal(body.error, 'not_found');
 });
 
 test('HEAD /<sha256>: returns 404 for non-existent blob', async () => {
@@ -197,18 +197,22 @@ test('PUT /upload: returns existing blob if already uploaded', async () => {
 
 test('PUT /upload: validates SHA-256 hash in auth event', async () => {
   const env = createMockEnv();
+  const now = Math.floor(Date.now() / 1000);
   const wrongHash = 'c'.repeat(64);
 
-  // Create mock event with 'x' tag
+  // Create BUD-01 compliant event with wrong x tag hash
   const event = {
     kind: 24242,
     pubkey: TEST_PUBKEY,
-    created_at: Math.floor(Date.now() / 1000),
+    created_at: now - 60,
     tags: [
       ['t', 'upload'],
-      ['x', wrongHash] // Wrong hash
+      ['x', wrongHash], // Wrong hash
+      ['expiration', String(now + 300)]
     ],
-    content: 'Upload request'
+    content: 'Upload request',
+    id: 'a'.repeat(64),
+    sig: 'c'.repeat(128)
   };
 
   const base64Event = btoa(JSON.stringify(event));
@@ -433,4 +437,270 @@ test('Invalid routes return 404', async () => {
   const res = await worker.fetch(req, env, {});
 
   assert.equal(res.status, 404);
+});
+
+// =============================================================================
+// BUD-01 COMPLIANCE TESTS
+// =============================================================================
+
+test('BUD-01: PUT /upload rejects expired auth event', async () => {
+  const env = createMockEnv();
+  const now = Math.floor(Date.now() / 1000);
+  const hash = await sha256(TEST_BLOB_CONTENT);
+
+  const event = {
+    kind: 24242,
+    pubkey: TEST_PUBKEY,
+    created_at: now - 600, // 10 minutes ago
+    tags: [
+      ['t', 'upload'],
+      ['x', hash],
+      ['expiration', String(now - 60)] // Expired 1 minute ago
+    ],
+    content: 'Upload request',
+    id: 'a'.repeat(64),
+    sig: 'c'.repeat(128)
+  };
+
+  const base64Event = btoa(JSON.stringify(event));
+
+  const req = makeRequest('/upload', {
+    method: 'PUT',
+    headers: {
+      'Content-Type': 'text/plain',
+      'Authorization': `Nostr ${base64Event}`
+    },
+    body: TEST_BLOB_CONTENT
+  });
+
+  const res = await worker.fetch(req, env, {});
+
+  assert.equal(res.status, 401);
+  const body = await res.json();
+  assert.equal(body.error, 'unauthorized');
+});
+
+test('BUD-01: PUT /upload rejects event without expiration tag', async () => {
+  const env = createMockEnv();
+  const now = Math.floor(Date.now() / 1000);
+  const hash = await sha256(TEST_BLOB_CONTENT);
+
+  const event = {
+    kind: 24242,
+    pubkey: TEST_PUBKEY,
+    created_at: now - 60,
+    tags: [
+      ['t', 'upload'],
+      ['x', hash]
+      // No expiration tag!
+    ],
+    content: 'Upload request',
+    id: 'a'.repeat(64),
+    sig: 'c'.repeat(128)
+  };
+
+  const base64Event = btoa(JSON.stringify(event));
+
+  const req = makeRequest('/upload', {
+    method: 'PUT',
+    headers: {
+      'Content-Type': 'text/plain',
+      'Authorization': `Nostr ${base64Event}`
+    },
+    body: TEST_BLOB_CONTENT
+  });
+
+  const res = await worker.fetch(req, env, {});
+
+  assert.equal(res.status, 401);
+});
+
+test('BUD-01: PUT /upload rejects event with wrong action tag', async () => {
+  const env = createMockEnv();
+  const now = Math.floor(Date.now() / 1000);
+  const hash = await sha256(TEST_BLOB_CONTENT);
+
+  const event = {
+    kind: 24242,
+    pubkey: TEST_PUBKEY,
+    created_at: now - 60,
+    tags: [
+      ['t', 'delete'], // Wrong action - should be 'upload'
+      ['x', hash],
+      ['expiration', String(now + 300)]
+    ],
+    content: 'Upload request',
+    id: 'a'.repeat(64),
+    sig: 'c'.repeat(128)
+  };
+
+  const base64Event = btoa(JSON.stringify(event));
+
+  const req = makeRequest('/upload', {
+    method: 'PUT',
+    headers: {
+      'Content-Type': 'text/plain',
+      'Authorization': `Nostr ${base64Event}`
+    },
+    body: TEST_BLOB_CONTENT
+  });
+
+  const res = await worker.fetch(req, env, {});
+
+  assert.equal(res.status, 401);
+});
+
+test('BUD-01: PUT /upload rejects NIP-98 kind 27235 event', async () => {
+  const env = createMockEnv();
+  const now = Math.floor(Date.now() / 1000);
+  const hash = await sha256(TEST_BLOB_CONTENT);
+
+  const event = {
+    kind: 27235, // NIP-98 kind instead of Blossom 24242
+    pubkey: TEST_PUBKEY,
+    created_at: now - 60,
+    tags: [
+      ['t', 'upload'],
+      ['x', hash],
+      ['expiration', String(now + 300)]
+    ],
+    content: 'Upload request',
+    id: 'a'.repeat(64),
+    sig: 'c'.repeat(128)
+  };
+
+  const base64Event = btoa(JSON.stringify(event));
+
+  const req = makeRequest('/upload', {
+    method: 'PUT',
+    headers: {
+      'Content-Type': 'text/plain',
+      'Authorization': `Nostr ${base64Event}`
+    },
+    body: TEST_BLOB_CONTENT
+  });
+
+  const res = await worker.fetch(req, env, {});
+
+  assert.equal(res.status, 401);
+});
+
+test('BUD-01: PUT /upload accepts valid BUD-01 compliant event', async () => {
+  const env = createMockEnv();
+  const now = Math.floor(Date.now() / 1000);
+  const hash = await sha256(TEST_BLOB_CONTENT);
+
+  const event = {
+    kind: 24242,
+    pubkey: TEST_PUBKEY,
+    created_at: now - 60,
+    tags: [
+      ['t', 'upload'],
+      ['x', hash],
+      ['expiration', String(now + 300)]
+    ],
+    content: 'Upload request',
+    id: 'a'.repeat(64),
+    sig: 'c'.repeat(128)
+  };
+
+  const base64Event = btoa(JSON.stringify(event));
+
+  const req = makeRequest('/upload', {
+    method: 'PUT',
+    headers: {
+      'Content-Type': 'text/plain',
+      'Authorization': `Nostr ${base64Event}`
+    },
+    body: TEST_BLOB_CONTENT
+  });
+
+  const res = await worker.fetch(req, env, {});
+
+  assert.equal(res.status, 200);
+  const body = await res.json();
+  assert.equal(body.sha256, hash);
+});
+
+// =============================================================================
+// BUD-01 RESPONSE HEADERS TESTS
+// =============================================================================
+
+test('BUD-01: 401 response includes WWW-Authenticate: Nostr header', async () => {
+  const env = createMockEnv();
+  const req = makeRequest('/upload', {
+    method: 'PUT',
+    headers: { 'Content-Type': 'text/plain' },
+    body: TEST_BLOB_CONTENT
+  });
+
+  const res = await worker.fetch(req, env, {});
+
+  assert.equal(res.status, 401);
+  assert.equal(res.headers.get('WWW-Authenticate'), 'Nostr');
+});
+
+test('BUD-01: 401 response includes X-Reason header', async () => {
+  const env = createMockEnv();
+  const req = makeRequest('/upload', {
+    method: 'PUT',
+    headers: { 'Content-Type': 'text/plain' },
+    body: TEST_BLOB_CONTENT
+  });
+
+  const res = await worker.fetch(req, env, {});
+
+  assert.equal(res.status, 401);
+  const xReason = res.headers.get('X-Reason');
+  assert(xReason, 'X-Reason header should be present');
+  assert.match(xReason, /unauthorized/i);
+});
+
+test('BUD-01: 400 response includes X-Reason header for hash mismatch', async () => {
+  const env = createMockEnv();
+  const now = Math.floor(Date.now() / 1000);
+  const wrongHash = 'c'.repeat(64);
+
+  const event = {
+    kind: 24242,
+    pubkey: TEST_PUBKEY,
+    created_at: now - 60,
+    tags: [
+      ['t', 'upload'],
+      ['x', wrongHash],
+      ['expiration', String(now + 300)]
+    ],
+    content: 'Upload request',
+    id: 'a'.repeat(64),
+    sig: 'c'.repeat(128)
+  };
+
+  const base64Event = btoa(JSON.stringify(event));
+
+  const req = makeRequest('/upload', {
+    method: 'PUT',
+    headers: {
+      'Content-Type': 'text/plain',
+      'Authorization': `Nostr ${base64Event}`
+    },
+    body: TEST_BLOB_CONTENT
+  });
+
+  const res = await worker.fetch(req, env, {});
+
+  assert.equal(res.status, 400);
+  const xReason = res.headers.get('X-Reason');
+  assert(xReason, 'X-Reason header should be present');
+  assert.match(xReason, /hash/i);
+});
+
+test('BUD-01: 404 response includes X-Reason header', async () => {
+  const env = createMockEnv();
+  const req = makeRequest(`/${TEST_HASH}`);
+
+  const res = await worker.fetch(req, env, {});
+
+  assert.equal(res.status, 404);
+  const xReason = res.headers.get('X-Reason');
+  assert(xReason, 'X-Reason header should be present');
 });
