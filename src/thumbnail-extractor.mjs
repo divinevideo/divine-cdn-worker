@@ -76,3 +76,83 @@ export async function extractFirstFrame(sha256, env, fetchFn = fetch) {
 
   return { success: false, error: 'max_retries_exceeded' };
 }
+
+/**
+ * Check if video duration exceeds the maximum allowed limit using Media Transformations
+ *
+ * Uses a clever trick: try to extract a frame at time=maxSeconds
+ * - If successful (HTTP 200): video is longer than maxSeconds
+ * - If error 9401 "Seek time exceeds duration": video is shorter than maxSeconds
+ * - Other errors: can't determine, returns null
+ *
+ * @param {string} sha256 - SHA256 hash of the video
+ * @param {Object} env - Worker environment
+ * @param {number} [maxSeconds=7] - Maximum allowed duration in seconds
+ * @param {Function} [fetchFn] - Optional fetch function for testing
+ * @returns {Promise<Object>} Result with exceedsLimit (boolean or null if unknown)
+ */
+export async function checkVideoDuration(sha256, env, maxSeconds = 7, fetchFn = fetch) {
+  const cdnDomain = env.STREAM_DOMAIN || 'cdn.divine.video';
+
+  // Try to extract a frame at the max duration point
+  const url = `https://${cdnDomain}/cdn-cgi/media/mode=frame,time=${maxSeconds}s,width=480/${sha256}`;
+
+  try {
+    const response = await fetchFn(url);
+
+    if (response.ok) {
+      // Frame extracted successfully at maxSeconds - video is too long
+      return {
+        exceedsLimit: true,
+        message: `Video duration exceeds ${maxSeconds} seconds`
+      };
+    }
+
+    // Check the error code
+    const cfResized = response.headers.get('cf-resized') || '';
+
+    // 9401 = "Seek time exceeds media duration" - video is shorter than maxSeconds
+    if (cfResized.includes('9401')) {
+      return {
+        exceedsLimit: false,
+        message: `Video duration is within ${maxSeconds} second limit`
+      };
+    }
+
+    // 9412 = Invalid video format - can't determine duration
+    if (cfResized.includes('9412')) {
+      return {
+        exceedsLimit: null,
+        error: 'invalid_format',
+        code: 9412,
+        message: 'Cannot determine duration - invalid video format'
+      };
+    }
+
+    // 9408 = Origin error (video might be blocked/rejected already)
+    if (cfResized.includes('9408')) {
+      return {
+        exceedsLimit: null,
+        error: 'origin_error',
+        code: 9408,
+        message: 'Cannot determine duration - origin error'
+      };
+    }
+
+    // Other errors - can't determine
+    return {
+      exceedsLimit: null,
+      error: 'unknown',
+      code: cfResized ? parseInt(cfResized.match(/\d+/)?.[0]) : null,
+      message: 'Cannot determine duration'
+    };
+
+  } catch (error) {
+    console.error('[DurationCheck] Error:', error);
+    return {
+      exceedsLimit: null,
+      error: 'fetch_failed',
+      message: error.message
+    };
+  }
+}

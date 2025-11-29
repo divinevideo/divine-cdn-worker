@@ -11,8 +11,28 @@ import { VideoStatus, VideoStatusLabel } from './bunny-client.mjs';
 export const Provider = {
   BUNNY_HLS: 'bunny-hls',
   BUNNY_MP4: 'bunny-mp4',
-  R2_MP4: 'r2-mp4'
+  R2_MP4: 'r2-mp4',
+  MEDIA_TRANSFORMS: 'media-transforms'
 };
+
+/**
+ * Generate Media Transformations variant URLs for a video
+ *
+ * @param {string} sha256 - Video SHA-256 hash
+ * @param {string} cdnDomain - CDN domain (e.g., 'cdn.divine.video')
+ * @returns {Object} Variant URLs
+ */
+export function getMediaTransformVariants(sha256, cdnDomain) {
+  const base = `https://${cdnDomain}`;
+  return {
+    original: `${base}/${sha256}`,
+    hd: `${base}/cdn-cgi/media/mode=video,width=1280,height=720/${sha256}`,
+    sd: `${base}/cdn-cgi/media/mode=video,width=854,height=480/${sha256}`,
+    mobile: `${base}/cdn-cgi/media/mode=video,width=640,height=360/${sha256}`,
+    thumbnail: `${base}/cdn-cgi/media/mode=frame,time=0s,width=480/${sha256}`,
+    audio: `${base}/cdn-cgi/media/mode=audio/${sha256}`
+  };
+}
 
 /**
  * Playback status
@@ -89,6 +109,23 @@ export class PlaybackResolver {
     const blob = JSON.parse(blobData);
     const bunny = blob.bunny || null;
     const cdnDomain = env.STREAM_DOMAIN || 'cdn.divine.video';
+
+    // If BunnyStream is disabled and no legacy bunny metadata, use Media Transformations
+    const bunnyEnabled = env.BUNNY_STREAM_ENABLED === 'true';
+    if (!bunnyEnabled && !bunny) {
+      const variants = getMediaTransformVariants(sha256, cdnDomain);
+      return {
+        url: variants.original,
+        provider: Provider.MEDIA_TRANSFORMS,
+        status: PlaybackStatus.READY,
+        variants: variants,
+        alternates: {
+          mp4: variants.original,
+          hd: variants.hd,
+          sd: variants.sd
+        }
+      };
+    }
 
     // Build result object
     const result = {

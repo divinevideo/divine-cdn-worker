@@ -93,6 +93,7 @@ describe('BunnyWebhookHandler', () => {
       BUNNY_WEBHOOK_TOKEN: 'test_bearer_token_67890',
       BUNNY_STREAM_PULL_ZONE: 'vz-test123.b-cdn.net',
       BUNNY_STREAM_LIBRARY_ID: '12345',
+      BUNNY_STREAM_ACCESS_KEY: 'test_access_key',
       STREAM_DOMAIN: 'cdn.divine.video'
     };
   });

@@ -1,38 +1,73 @@
-#!/usr/bin/env node
-// ABOUTME: Test script for creating a video upload with simplified auth
-// ABOUTME: Uses the pre-prod auth stub format for testing
+import { schnorr } from '@noble/curves/secp256k1.js';
+import crypto from 'crypto';
+import fs from 'fs';
 
-const API_URL = process.argv[2] || 'https://cf-stream-service-staging.protestnet.workers.dev';
+const PRIVATE_KEY_HEX = 'a'.repeat(64);
+const SERVER_URL = 'https://blossom.divine.video';
 
-async function testUpload() {
+function bytesToHex(bytes) {
+  return Array.from(bytes).map(b => b.toString(16).padStart(2, '0')).join('');
+}
+
+function hexToBytes(hex) {
+  const bytes = new Uint8Array(hex.length / 2);
+  for (let i = 0; i < hex.length; i += 2) {
+    bytes[i / 2] = parseInt(hex.substr(i, 2), 16);
+  }
+  return bytes;
+}
+
+function sha256(data) {
+  return crypto.createHash('sha256').update(data).digest();
+}
+
+function getPublicKey(privateKeyHex) {
+  return bytesToHex(schnorr.getPublicKey(hexToBytes(privateKeyHex)));
+}
+
+function signEvent(event, privateKeyHex) {
+  const serialized = JSON.stringify([0, event.pubkey, event.created_at, event.kind, event.tags, event.content]);
+  const idBytes = new Uint8Array(sha256(Buffer.from(serialized, 'utf-8')));
+  const id = bytesToHex(idBytes);
+  const sig = bytesToHex(schnorr.sign(idBytes, hexToBytes(privateKeyHex)));
+  return { ...event, id, sig };
+}
+
+async function uploadVideo(filePath) {
+  const pubkey = getPublicKey(PRIVATE_KEY_HEX);
+  const videoData = fs.readFileSync(filePath);
+  const fileHash = bytesToHex(sha256(videoData));
+
+  console.log('=== Upload Test ===');
+  console.log('File:', filePath);
+  console.log('Hash:', fileHash);
+  console.log('Size:', videoData.length, 'bytes');
+
+  const now = Math.floor(Date.now() / 1000);
+  const event = {
+    kind: 24242,
+    pubkey,
+    created_at: now - 10,
+    tags: [['t', 'upload'], ['expiration', String(now + 300)], ['x', fileHash]],
+    content: 'Test upload'
+  };
+  const signedEvent = signEvent(event, PRIVATE_KEY_HEX);
+  const base64Event = Buffer.from(JSON.stringify(signedEvent)).toString('base64');
+
+  console.log('\nUploading...');
+  const response = await fetch(`${SERVER_URL}/upload`, {
+    method: 'PUT',
+    headers: { 'Authorization': `Nostr ${base64Event}`, 'Content-Type': 'video/mp4' },
+    body: videoData
+  });
+
+  console.log('Status:', response.status);
+  const body = await response.text();
   try {
-    // Using the pre-prod auth stub format (simplified)
-    const response = await fetch(`${API_URL}/v1/videos`, {
-      method: 'POST',
-      headers: {
-        'Authorization': 'Nostr pubkey=npub1234567890abcdef',
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({
-        sha256: 'test_sha256_' + Date.now(),
-        vineId: 'test_vine_' + Date.now()
-      })
-    });
-
-    const data = await response.json();
-    console.log('Response status:', response.status);
-    console.log('Response data:', JSON.stringify(data, null, 2));
-    
-    if (data.uid && data.uploadURL) {
-      console.log('\n✅ Upload URL created successfully!');
-      console.log('UID:', data.uid);
-      console.log('Upload URL:', data.uploadURL);
-      console.log('Expires at:', new Date(data.expiresAt).toISOString());
-      console.log('Owner:', data.owner);
-    }
-  } catch (error) {
-    console.error('Error:', error);
+    console.log('Response:', JSON.stringify(JSON.parse(body), null, 2));
+  } catch {
+    console.log('Response:', body);
   }
 }
 
-testUpload();
+uploadVideo('/tmp/long_real_video.mp4');

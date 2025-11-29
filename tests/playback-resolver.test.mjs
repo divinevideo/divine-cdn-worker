@@ -7,7 +7,7 @@ import { PlaybackResolver, Provider, PlaybackStatus } from '../src/streaming/pla
 import { VideoStatus, VideoStatusLabel } from '../src/streaming/bunny-client.mjs';
 
 // Mock environment
-function createMockEnv() {
+function createMockEnv(options = {}) {
   const kvStore = new Map();
 
   return {
@@ -23,7 +23,10 @@ function createMockEnv() {
       }
     },
     STREAM_DOMAIN: 'cdn.divine.video',
-    BUNNY_STREAM_PULL_ZONE: 'vz-test123.b-cdn.net'
+    BUNNY_STREAM_PULL_ZONE: 'vz-test123.b-cdn.net',
+    // Default to Bunny enabled for legacy tests; set to 'false' for MT tests
+    BUNNY_STREAM_ENABLED: options.bunnyEnabled === false ? 'false' : 'true',
+    ...options
   };
 }
 
@@ -607,4 +610,44 @@ test('resolveUrl: uses custom STREAM_DOMAIN from env', async () => {
   const result = await resolver.resolveUrl(TEST_SHA256, 'mp4', env);
 
   assert.strictEqual(result.url, `https://custom.cdn.example.com/${TEST_SHA256}.mp4`);
+});
+
+// ============================================================================
+// Media Transformations Tests (when BUNNY_STREAM_ENABLED is false)
+// ============================================================================
+
+test('resolveUrl: returns Media Transformations URLs when Bunny disabled', async () => {
+  const env = createMockEnv({ bunnyEnabled: false });
+  const blob = createBlobMetadata();
+  await env.MEDIA_KV.put(`blob:${TEST_SHA256}`, JSON.stringify(blob));
+
+  const resolver = new PlaybackResolver();
+  const result = await resolver.resolveUrl(TEST_SHA256, 'auto', env);
+
+  assert.strictEqual(result.provider, Provider.MEDIA_TRANSFORMS);
+  assert.strictEqual(result.status, PlaybackStatus.READY);
+  assert.strictEqual(result.url, `https://cdn.divine.video/${TEST_SHA256}`);
+  assert.ok(result.variants);
+  assert.strictEqual(result.variants.original, `https://cdn.divine.video/${TEST_SHA256}`);
+  assert.ok(result.variants.hd.includes('cdn-cgi/media'));
+  assert.ok(result.variants.thumbnail.includes('mode=frame'));
+});
+
+test('resolveUrl: uses Bunny for legacy videos even when Bunny disabled', async () => {
+  const env = createMockEnv({ bunnyEnabled: false });
+  const blob = createBlobMetadata({
+    bunny: {
+      videoId: TEST_GUID,
+      status: VideoStatusLabel[VideoStatus.FINISHED],
+      hlsUrl: `https://vz-test123.b-cdn.net/${TEST_GUID}/playlist.m3u8`
+    }
+  });
+  await env.MEDIA_KV.put(`blob:${TEST_SHA256}`, JSON.stringify(blob));
+
+  const resolver = new PlaybackResolver();
+  const result = await resolver.resolveUrl(TEST_SHA256, 'auto', env);
+
+  // Should still use Bunny HLS for legacy videos with bunny metadata
+  assert.strictEqual(result.provider, Provider.BUNNY_HLS);
+  assert.strictEqual(result.status, PlaybackStatus.READY);
 });

@@ -92,13 +92,14 @@ REQUIRE_PROOFMODE_FOR_VIDEOS = "false"  # Set to "true" after launch
 # BUNNY_UPLOAD_DEST controls upload behavior: "r2" (default), "bunny", or "dual"
 
 # Enable/disable BunnyStream integration (master switch)
-BUNNY_STREAM_ENABLED = "true"
+# When false, uses Cloudflare Media Transformations for on-demand video variants
+BUNNY_STREAM_ENABLED = "false"
 
 # BunnyStream library ID (get from Bunny.net dashboard)
 BUNNY_STREAM_LIBRARY_ID = "515420"
 
 # Upload destination: "r2" (Cloudflare R2 only), "bunny" (BunnyStream only), or "dual" (hash-based split)
-# Using "bunny" to route all videos to BunnyStream for HLS encoding
+# Only applies when BUNNY_STREAM_ENABLED="true"
 BUNNY_UPLOAD_DEST = "bunny"
 
 # Percentage of traffic to route through BunnyStream (0-100)

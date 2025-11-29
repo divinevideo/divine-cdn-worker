@@ -5,10 +5,11 @@ import { R2BlobStorage } from './storage/r2-blob-storage.mjs';
 import { KVMetadataStore } from './storage/kv-metadata-store.mjs';
 import { validateProofMode, storeVerificationResult } from './proofmode-validator.mjs';
 import { BunnyWebhookHandler } from './streaming/bunny-webhook.mjs';
-import { PlaybackResolver } from './streaming/playback-resolver.mjs';
+import { PlaybackResolver, getMediaTransformVariants } from './streaming/playback-resolver.mjs';
 import { selectUploadStrategy, BunnyUploadHandler } from './streaming/upload-strategy.mjs';
 import { handleBunnyAPI } from './streaming/bunny-api.mjs';
 import { validateBud01Event } from './bud01-validator.mjs';
+import { checkVideoDuration, shouldAttemptMediaTransformation } from './thumbnail-extractor.mjs';
 
 /**
  * Cloudflare Worker entry point
@@ -632,6 +633,46 @@ async function handleUploadBlob(request, blobStorage, metadataStore, env, ctx) {
   // Generate UID for this blob
   const uid = crypto.randomUUID().replace(/-/g, '');
 
+  // Store blob in R2 first (needed for Media Transformations duration check)
+  await blobStorage.writeBlob(sha256, blob, contentType, auth.pubkey, uid, proofModeResult);
+
+  // For videos, check duration using Media Transformations BEFORE sending to BunnyStream
+  // This saves encoding costs by rejecting long videos immediately
+  if (isVideo && shouldAttemptMediaTransformation(env, size)) {
+    const MAX_DURATION_SECONDS = 7; // Enforce 7s limit (tell users 6s for tolerance)
+    console.log(`[DurationCheck] Checking video ${sha256.substring(0, 12)}... duration limit (${MAX_DURATION_SECONDS}s)`);
+
+    const durationResult = await checkVideoDuration(sha256, env, MAX_DURATION_SECONDS);
+
+    if (durationResult.exceedsLimit === true) {
+      // Video is too long - reject immediately
+      console.log(`⛔ Video ${sha256.substring(0, 12)}... rejected: ${durationResult.message}`);
+
+      // Store rejection in KV for GET request blocking
+      await env.MEDIA_KV.put(`duration-rejected:${sha256}`, JSON.stringify({
+        maxAllowed: 6, // User-facing limit
+        actualLimit: MAX_DURATION_SECONDS,
+        rejectedAt: Date.now(),
+        reason: 'Video duration exceeds maximum allowed length',
+        method: 'media_transformations'
+      }));
+
+      // Delete from R2 to save storage
+      await blobStorage.removeBlob(sha256);
+
+      return jsonResponse(400, {
+        error: 'duration_exceeded',
+        message: 'Videos longer than 6 seconds are not allowed on this service',
+        maxAllowed: 6
+      });
+    } else if (durationResult.exceedsLimit === false) {
+      console.log(`✅ Video ${sha256.substring(0, 12)}... passed duration check`);
+    } else {
+      // Can't determine duration - let it through, BunnyStream will check later
+      console.log(`[DurationCheck] Could not verify duration: ${durationResult.message}`);
+    }
+  }
+
   // Upload Strategy: Route video uploads to BunnyStream or R2 based on feature flags
   let bunnyMetadata = null;
   if (isVideo) {
@@ -665,10 +706,6 @@ async function handleUploadBlob(request, blobStorage, metadataStore, env, ctx) {
       }
     }
   }
-
-  // Store blob with metadata (including ProofMode verification)
-  // Always store in R2 for now as backup/fallback
-  await blobStorage.writeBlob(sha256, blob, contentType, auth.pubkey, uid, proofModeResult);
 
   // Store ProofMode verification result in KV
   if (env.MEDIA_KV) {
@@ -766,6 +803,15 @@ async function handleUploadBlob(request, blobStorage, metadataStore, env, ctx) {
     };
     // Also provide R2 MP4 as fallback
     response.fallbackUrl = `https://${domain}/${sha256}${fileExt}`;
+  } else if (contentType.startsWith('video/')) {
+    // BunnyStream disabled - provide Media Transformations variants
+    const variants = getMediaTransformVariants(sha256, domain);
+    response.variants = variants;
+    response.streaming = {
+      status: 'ready',
+      provider: 'media-transforms',
+      message: 'Video variants available via Cloudflare Media Transformations.'
+    };
   }
 
   return jsonResponse(200, response);

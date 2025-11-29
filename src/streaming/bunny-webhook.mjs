@@ -355,8 +355,31 @@ export class BunnyWebhookHandler {
       // Continue anyway - thumbnail upload is non-critical
     }
 
+    // Get duration from webhook payload (Length field) or fetch from API
+    let videoDuration = 0;
+    if (payload.Length && typeof payload.Length === 'number') {
+      // BunnyStream webhook includes Length field with duration in seconds
+      videoDuration = payload.Length;
+      console.log(`[Duration] Video ${videoId} duration from webhook: ${videoDuration}s`);
+    } else {
+      // Fallback: fetch from API if Length not in payload
+      try {
+        const { BunnyStreamClient } = await import('./bunny-client.mjs');
+        const bunnyClient = new BunnyStreamClient(
+          env.BUNNY_STREAM_ACCESS_KEY,
+          env.BUNNY_STREAM_LIBRARY_ID
+        );
+        const videoInfo = await bunnyClient.getVideo(videoId);
+        videoDuration = videoInfo.duration || 0;
+        console.log(`[Duration] Video ${videoId} duration from API: ${videoDuration}s`);
+      } catch (error) {
+        console.error(`[Duration] Failed to fetch video info:`, error);
+        // Continue with duration 0 - we'll allow it through
+      }
+    }
+
     // Check duration limit (tell users 6 seconds, enforce at 7 seconds for tolerance)
-    const duration = payload.Length || 0;
+    const duration = videoDuration;
     const MAX_DURATION_SECONDS = 7;
     let isDurationRejected = false;
 
@@ -388,7 +411,7 @@ export class BunnyWebhookHandler {
       thumbnailSha256,
       thumbnailSource,
       thumbnailBlossomUrl: thumbnailSha256 ? `https://${cdnDomain}/${thumbnailSha256}.jpg` : null,
-      duration: payload.Length || null,
+      duration: videoDuration || null,
       durationRejected: isDurationRejected,
       encodeProgress: payload.EncodeProgress || 100,
       encodedAt: Date.now(),
@@ -418,7 +441,7 @@ export class BunnyWebhookHandler {
         thumbnailSha256,
         thumbnailSource,
         thumbnailBlossomUrl: thumbnailSha256 ? `https://${cdnDomain}/${thumbnailSha256}.jpg` : null,
-        duration: payload.Length || null,
+        duration: videoDuration || null,
         encodedAt: Date.now()
       };
 
