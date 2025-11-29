@@ -70,14 +70,23 @@ routes = [
 # - Reduces worker invocations (cache hits bypass worker)
 # - Popular content stays cached longer
 
-# Enable observability and logs for production
+# Smart Placement - route requests to optimal location for D1/KV access
+[env.production.placement]
+mode = "smart"
+
+# Observability with logs and traces
 [env.production.observability]
-enabled = true
+enabled = false
+head_sampling_rate = 1
 
 [env.production.observability.logs]
 enabled = true
 head_sampling_rate = 1
 invocation_logs = true
+
+[env.production.observability.traces]
+enabled = true
+head_sampling_rate = 1
 
 [env.production.vars]
 DEV_AUTH_MODE = "false"  # CRITICAL: Enforce signature verification in production
