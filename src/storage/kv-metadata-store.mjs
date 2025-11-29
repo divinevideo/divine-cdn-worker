@@ -38,12 +38,19 @@ export class KVMetadataStore {
       if (videoData) {
         const video = JSON.parse(videoData);
         // Convert old format to new format
-        return {
+        const newFormatBlob = {
           sha256: video.sha256 || sha256,
           size: video.size || 0,
           type: video.contentType || 'video/mp4',
           uploaded: Math.floor((video.createdAt || Date.now()) / 1000)
         };
+
+        // Lazy migration: write new format for future requests (fire-and-forget)
+        this.kv.put(`blob:${sha256}`, JSON.stringify(newFormatBlob))
+          .then(() => console.log(`[KV Migration] Migrated metadata for ${sha256.substring(0,8)}`))
+          .catch(err => console.error(`[KV Migration] Failed:`, err));
+
+        return newFormatBlob;
       }
     }
 
