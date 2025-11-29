@@ -35,18 +35,33 @@ export class KVMetadataStore {
     // Fallback to old format for backward compatibility
     const oldIndex = await this.kv.get(`idx:sha256:${sha256}`);
     if (oldIndex) {
-      const { uid } = JSON.parse(oldIndex);
-      const videoData = await this.kv.get(`video:${uid}`);
-      if (videoData) {
-        const video = JSON.parse(videoData);
-        // Convert old format to new format
-        const newFormatBlob = {
-          sha256: video.sha256 || sha256,
-          size: video.size || 0,
-          type: video.contentType || 'video/mp4',
-          uploaded: Math.floor((video.createdAt || Date.now()) / 1000)
-        };
+      const parsedIndex = JSON.parse(oldIndex);
+      let newFormatBlob = null;
 
+      // Check if this is old VIDEO format: {"uid":"..."} -> video:{uid}
+      if (parsedIndex.uid) {
+        const videoData = await this.kv.get(`video:${parsedIndex.uid}`);
+        if (videoData) {
+          const video = JSON.parse(videoData);
+          newFormatBlob = {
+            sha256: video.sha256 || sha256,
+            size: video.size || 0,
+            type: video.contentType || 'video/mp4',
+            uploaded: Math.floor((video.createdAt || Date.now()) / 1000)
+          };
+        }
+      }
+      // Check if this is old IMAGE format: {"sha256":"...", "type":"image"}
+      else if (parsedIndex.type === 'image' || parsedIndex.sha256) {
+        newFormatBlob = {
+          sha256: parsedIndex.sha256 || sha256,
+          size: parsedIndex.size || 0,
+          type: 'image/jpeg',  // Old images were JPEGs
+          uploaded: Math.floor((parsedIndex.createdAt || Date.now()) / 1000)
+        };
+      }
+
+      if (newFormatBlob) {
         // Lazy migration: write new format for future requests
         const migrationPromise = this.kv.put(`blob:${sha256}`, JSON.stringify(newFormatBlob))
           .then(() => console.log(`[KV Migration] Migrated metadata for ${sha256.substring(0,8)}`))
