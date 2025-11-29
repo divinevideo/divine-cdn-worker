@@ -23,9 +23,21 @@ export class R2BlobStorage {
     } catch {}
 
     try {
-      // Fallback to old path for backward compatibility
+      // Fallback to old video path for backward compatibility
       const oldObj = await this.r2.head(`videos/${sha256}.mp4`);
-      return oldObj !== null;
+      if (oldObj !== null) return true;
+    } catch {}
+
+    try {
+      // Fallback to root level mp4
+      const rootMp4 = await this.r2.head(`${sha256}.mp4`);
+      if (rootMp4 !== null) return true;
+    } catch {}
+
+    try {
+      // Fallback to root level jpg (thumbnails)
+      const rootJpg = await this.r2.head(`${sha256}.jpg`);
+      return rootJpg !== null;
     } catch {
       return false;
     }
@@ -90,6 +102,15 @@ export class R2BlobStorage {
       if (obj) {
         needsMigration = true;
         sourceKey = `${sha256}.mp4`;
+      }
+    }
+
+    // Fallback to root level .jpg (thumbnails stored by bunny-webhook)
+    if (!obj) {
+      obj = await this.r2.get(`${sha256}.jpg`, r2Options);
+      if (obj) {
+        needsMigration = true;
+        sourceKey = `${sha256}.jpg`;
       }
     }
 
