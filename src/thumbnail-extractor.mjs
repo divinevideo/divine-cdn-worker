@@ -79,7 +79,8 @@ export async function extractFirstFrame(sha256, env, fetchFn = fetch) {
 
 // Retry delays for duration check - longer than thumbnail extraction
 // because we need to wait for R2 -> CDN propagation after fresh upload
-const DURATION_CHECK_DELAYS_MS = [2000, 3000, 5000]; // Wait longer for CDN propagation
+// Total wait: 3s + 5s + 7s = 15s max (CF propagation can take 10-20s)
+const DURATION_CHECK_DELAYS_MS = [3000, 5000, 7000];
 
 /**
  * Check if video duration exceeds the maximum allowed limit using Media Transformations

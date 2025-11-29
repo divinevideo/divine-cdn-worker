@@ -9,7 +9,7 @@ import { PlaybackResolver, getMediaTransformVariants, buildMediaTransformUrl } f
 import { selectUploadStrategy, BunnyUploadHandler } from './streaming/upload-strategy.mjs';
 import { handleBunnyAPI } from './streaming/bunny-api.mjs';
 import { validateBud01Event } from './bud01-validator.mjs';
-import { checkVideoDuration, shouldAttemptMediaTransformation } from './thumbnail-extractor.mjs';
+import { checkVideoDurationFromBytes } from './video-duration.mjs';
 
 /**
  * Cloudflare Worker entry point
@@ -87,15 +87,23 @@ export default {
           const cachedResponse = await cache.match(cacheKey);
 
           if (cachedResponse) {
-            console.log(`[Cache HIT] ${url.pathname}`);
-            // Add custom header to indicate cache hit
-            const headers = new Headers(cachedResponse.headers);
-            headers.set('X-Cache-Status', 'HIT');
-            return new Response(cachedResponse.body, {
-              status: cachedResponse.status,
-              statusText: cachedResponse.statusText,
-              headers
-            });
+            // Reject 0-byte cached responses (stale from R2 consistency issues)
+            const contentLength = cachedResponse.headers.get('content-length');
+            if (contentLength === '0') {
+              console.log(`[Cache STALE] ${url.pathname} - rejecting 0-byte cached response`);
+              // Delete the stale cache entry
+              await cache.delete(cacheKey);
+            } else {
+              console.log(`[Cache HIT] ${url.pathname}`);
+              // Add custom header to indicate cache hit
+              const headers = new Headers(cachedResponse.headers);
+              headers.set('X-Cache-Status', 'HIT');
+              return new Response(cachedResponse.body, {
+                status: cachedResponse.status,
+                statusText: cachedResponse.statusText,
+                headers
+              });
+            }
           }
 
           console.log(`[Cache MISS] ${url.pathname}`);
@@ -654,45 +662,30 @@ async function handleUploadBlob(request, blobStorage, metadataStore, env, ctx) {
   // Generate UID for this blob
   const uid = crypto.randomUUID().replace(/-/g, '');
 
-  // Store blob in R2 first (needed for Media Transformations duration check)
-  await blobStorage.writeBlob(sha256, blob, contentType, auth.pubkey, uid, proofModeResult);
-
-  // For videos, check duration using Media Transformations BEFORE sending to BunnyStream
-  // This saves encoding costs by rejecting long videos immediately
-  if (isVideo && shouldAttemptMediaTransformation(env, size)) {
-    const MAX_DURATION_SECONDS = 7; // Enforce 7s limit (tell users 6s for tolerance)
-    console.log(`[DurationCheck] Checking video ${sha256.substring(0, 12)}... duration limit (${MAX_DURATION_SECONDS}s)`);
-
-    const durationResult = await checkVideoDuration(sha256, env, MAX_DURATION_SECONDS);
+  // Check video duration from bytes BEFORE writing to R2
+  // This avoids the cache corruption issue from Media Transformations approach
+  if (isVideo && contentType === 'video/mp4') {
+    const MAX_DURATION_SECONDS = 7; // Internal limit (tell users 6s for tolerance)
+    const durationResult = checkVideoDurationFromBytes(blob, MAX_DURATION_SECONDS);
 
     if (durationResult.exceedsLimit === true) {
-      // Video is too long - reject immediately
-      console.log(`⛔ Video ${sha256.substring(0, 12)}... rejected: ${durationResult.message}`);
-
-      // Store rejection in KV for GET request blocking
-      await env.MEDIA_KV.put(`duration-rejected:${sha256}`, JSON.stringify({
-        maxAllowed: 6, // User-facing limit
-        actualLimit: MAX_DURATION_SECONDS,
-        rejectedAt: Date.now(),
-        reason: 'Video duration exceeds maximum allowed length',
-        method: 'media_transformations'
-      }));
-
-      // Delete from R2 to save storage
-      await blobStorage.removeBlob(sha256);
-
+      console.log(`⛔ Video rejected: ${durationResult.message}`);
       return jsonResponse(400, {
         error: 'duration_exceeded',
         message: 'Videos longer than 6 seconds are not allowed on this service',
-        maxAllowed: 6
+        maxAllowed: 6,
+        detected: Math.floor(durationResult.duration)
       });
     } else if (durationResult.exceedsLimit === false) {
-      console.log(`✅ Video ${sha256.substring(0, 12)}... passed duration check`);
+      console.log(`✅ Video duration OK: ${durationResult.message}`);
     } else {
-      // Can't determine duration - let it through, BunnyStream will check later
-      console.log(`[DurationCheck] Could not verify duration: ${durationResult.message}`);
+      // Can't parse duration - let it through, log warning
+      console.log(`[Duration] Could not parse: ${durationResult.message}`);
     }
   }
+
+  // Store blob in R2
+  await blobStorage.writeBlob(sha256, blob, contentType, auth.pubkey, uid, proofModeResult);
 
   // Upload Strategy: Route video uploads to BunnyStream or R2 based on feature flags
   let bunnyMetadata = null;
@@ -2088,6 +2081,13 @@ function shouldCache(response, request) {
 
   // Don't cache server errors (transient failures)
   if (response.status >= 500) {
+    return false;
+  }
+
+  // Don't cache empty responses (0-byte) - likely R2 consistency issue
+  const contentLength = response.headers.get('content-length');
+  if (contentLength === '0') {
+    console.log('[Cache SKIP] Not caching 0-byte response');
     return false;
   }
 

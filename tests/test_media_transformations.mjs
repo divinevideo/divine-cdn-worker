@@ -50,8 +50,14 @@ function signEvent(event, privateKeyHex) {
 async function main() {
   const pubkey = getPublicKey(PRIVATE_KEY_HEX);
   
-  // Read video file (use better-encoded test video)
-  const videoData = fs.readFileSync('/tmp/test_video2.mp4');
+  // Read video file (use properly-encoded test video)
+  const videoPath = '/tmp/test_video_proper.mp4';
+  if (!fs.existsSync(videoPath)) {
+    console.error('Test video not found. Create with:');
+    console.error('ffmpeg -y -f lavfi -i testsrc=duration=3:size=640x360:rate=30 -f lavfi -i sine=frequency=440:duration=3 -c:v libx264 -preset ultrafast -pix_fmt yuv420p -c:a aac -b:a 128k /tmp/test_video_proper.mp4');
+    process.exit(1);
+  }
+  const videoData = fs.readFileSync(videoPath);
   const fileHash = bytesToHex(sha256(videoData));
   
   console.log('=== Uploading test video ===');
