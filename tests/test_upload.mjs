@@ -70,4 +70,4 @@ async function uploadVideo(filePath) {
   }
 }
 
-uploadVideo('/tmp/long_real_video.mp4');
+uploadVideo('/tmp/final_test.mp4');

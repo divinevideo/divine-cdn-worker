@@ -16,7 +16,44 @@ export const Provider = {
 };
 
 /**
+ * Build a Media Transformations URL from query parameters
+ * Implements NIP-96 compatible ?w= parameter and custom ?thumb, ?audio params
+ *
+ * @param {string} sha256 - Video SHA-256 hash
+ * @param {string} cdnDomain - CDN domain (e.g., 'cdn.divine.video')
+ * @param {Object} params - Query parameters (w, thumb, audio)
+ * @returns {string|null} cdn-cgi URL or null if no transformation needed
+ */
+export function buildMediaTransformUrl(sha256, cdnDomain, params) {
+  const base = `https://${cdnDomain}`;
+
+  // ?thumb - first frame thumbnail
+  if ('thumb' in params) {
+    return `${base}/cdn-cgi/media/mode=frame,time=0s,width=480/${sha256}`;
+  }
+
+  // ?audio - audio extraction
+  if ('audio' in params) {
+    return `${base}/cdn-cgi/media/mode=audio/${sha256}`;
+  }
+
+  // ?w=N - width-based video resize (NIP-96 style)
+  if (params.w) {
+    const width = parseInt(params.w, 10);
+    // CF Media Transformations supports 10-2000px
+    if (isNaN(width) || width < 10 || width > 2000) {
+      return null;
+    }
+    return `${base}/cdn-cgi/media/mode=video,width=${width}/${sha256}`;
+  }
+
+  // No transformation params - serve original
+  return null;
+}
+
+/**
  * Generate Media Transformations variant URLs for a video
+ * Returns clean NIP-96 compatible URLs with query parameters
  *
  * @param {string} sha256 - Video SHA-256 hash
  * @param {string} cdnDomain - CDN domain (e.g., 'cdn.divine.video')
@@ -26,11 +63,11 @@ export function getMediaTransformVariants(sha256, cdnDomain) {
   const base = `https://${cdnDomain}`;
   return {
     original: `${base}/${sha256}`,
-    hd: `${base}/cdn-cgi/media/mode=video,width=1280,height=720/${sha256}`,
-    sd: `${base}/cdn-cgi/media/mode=video,width=854,height=480/${sha256}`,
-    mobile: `${base}/cdn-cgi/media/mode=video,width=640,height=360/${sha256}`,
-    thumbnail: `${base}/cdn-cgi/media/mode=frame,time=0s,width=480/${sha256}`,
-    audio: `${base}/cdn-cgi/media/mode=audio/${sha256}`
+    hd: `${base}/${sha256}?w=1280`,
+    sd: `${base}/${sha256}?w=854`,
+    mobile: `${base}/${sha256}?w=640`,
+    thumbnail: `${base}/${sha256}?thumb`,
+    audio: `${base}/${sha256}?audio`
   };
 }
 

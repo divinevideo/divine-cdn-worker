@@ -54,17 +54,27 @@ return new Response(JSON.stringify(uploadResult), ...);
 
 Non-blocking, happens immediately after upload, no webhook needed.
 
-### URL Structure
+### URL Structure (NIP-96 Compatible)
+
+Following NIP-96's `?w=` query parameter convention for clean, Blossom-compatible URLs:
 
 ```
 Original:    https://cdn.divine.video/{sha256}
-720p:        https://cdn.divine.video/cdn-cgi/media/mode=video,width=1280,height=720/{sha256}
-480p:        https://cdn.divine.video/cdn-cgi/media/mode=video,width=854,height=480/{sha256}
-360p:        https://cdn.divine.video/cdn-cgi/media/mode=video,width=640,height=360/{sha256}
-Thumbnail:   https://cdn.divine.video/cdn-cgi/media/mode=frame,time=0s,width=480/{sha256}
-Audio:       https://cdn.divine.video/cdn-cgi/media/mode=audio/{sha256}
-Spritesheet: https://cdn.divine.video/cdn-cgi/media/mode=spritesheet,width=120/{sha256}
+720p:        https://cdn.divine.video/{sha256}?w=1280
+480p:        https://cdn.divine.video/{sha256}?w=854
+360p:        https://cdn.divine.video/{sha256}?w=640
+Thumbnail:   https://cdn.divine.video/{sha256}?thumb
+Audio:       https://cdn.divine.video/{sha256}?audio
 ```
+
+The worker internally routes these to Cloudflare Media Transformations:
+- `?w=1280` → `cdn-cgi/media/mode=video,width=1280/{sha256}`
+- `?w=854`  → `cdn-cgi/media/mode=video,width=854/{sha256}`
+- `?w=640`  → `cdn-cgi/media/mode=video,width=640/{sha256}`
+- `?thumb`  → `cdn-cgi/media/mode=frame,time=0s,width=480/{sha256}`
+- `?audio`  → `cdn-cgi/media/mode=audio/{sha256}`
+
+Per NIP-96 spec, servers may ignore unsupported parameters and serve the original file.
 
 ## Changes Required
 

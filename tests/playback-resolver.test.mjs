@@ -629,8 +629,9 @@ test('resolveUrl: returns Media Transformations URLs when Bunny disabled', async
   assert.strictEqual(result.url, `https://cdn.divine.video/${TEST_SHA256}`);
   assert.ok(result.variants);
   assert.strictEqual(result.variants.original, `https://cdn.divine.video/${TEST_SHA256}`);
-  assert.ok(result.variants.hd.includes('cdn-cgi/media'));
-  assert.ok(result.variants.thumbnail.includes('mode=frame'));
+  // NIP-96 compatible clean URLs
+  assert.strictEqual(result.variants.hd, `https://cdn.divine.video/${TEST_SHA256}?w=1280`);
+  assert.strictEqual(result.variants.thumbnail, `https://cdn.divine.video/${TEST_SHA256}?thumb`);
 });
 
 test('resolveUrl: uses Bunny for legacy videos even when Bunny disabled', async () => {

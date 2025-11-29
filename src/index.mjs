@@ -5,7 +5,7 @@ import { R2BlobStorage } from './storage/r2-blob-storage.mjs';
 import { KVMetadataStore } from './storage/kv-metadata-store.mjs';
 import { validateProofMode, storeVerificationResult } from './proofmode-validator.mjs';
 import { BunnyWebhookHandler } from './streaming/bunny-webhook.mjs';
-import { PlaybackResolver, getMediaTransformVariants } from './streaming/playback-resolver.mjs';
+import { PlaybackResolver, getMediaTransformVariants, buildMediaTransformUrl } from './streaming/playback-resolver.mjs';
 import { selectUploadStrategy, BunnyUploadHandler } from './streaming/upload-strategy.mjs';
 import { handleBunnyAPI } from './streaming/bunny-api.mjs';
 import { validateBud01Event } from './bud01-validator.mjs';
@@ -236,11 +236,32 @@ export default {
         }
       }
 
-      // GET /<sha256> - Retrieve blob
+      // GET /<sha256> - Retrieve blob (with NIP-96 compatible query params)
       if (method === 'GET' || method === 'HEAD') {
         const match = url.pathname.match(/^\/([a-f0-9]{64})(\.[a-z0-9]+)?$/);
         if (match) {
-          const response = await handleGetBlob(match[1], method === 'HEAD', blobStorage, metadataStore, request, env);
+          const sha256 = match[1];
+          const cdnDomain = env.STREAM_DOMAIN || 'cdn.divine.video';
+
+          // Check for Media Transformation query params (?w=, ?thumb, ?audio)
+          const params = Object.fromEntries(url.searchParams);
+          const transformUrl = buildMediaTransformUrl(sha256, cdnDomain, params);
+
+          if (transformUrl) {
+            // Redirect to Media Transformations endpoint
+            const response = new Response(null, {
+              status: 302,
+              headers: {
+                'Location': transformUrl,
+                'Access-Control-Allow-Origin': '*',
+                'Cache-Control': 'public, max-age=31536000, immutable'
+              }
+            });
+            return await cacheAndReturn(response, request, url);
+          }
+
+          // No transformation params - serve original blob
+          const response = await handleGetBlob(sha256, method === 'HEAD', blobStorage, metadataStore, request, env);
           return await cacheAndReturn(response, request, url);
         }
       }
