@@ -16,31 +16,27 @@ export class R2BlobStorage {
   }
 
   async hasBlob(sha256) {
-    try {
-      // Check new path first
-      const obj = await this.r2.head(`blobs/${sha256}`);
-      if (obj !== null) return true;
-    } catch {}
+    // Parallel lookup: check all paths simultaneously
+    const paths = [
+      `blobs/${sha256}`,
+      `videos/${sha256}.mp4`,
+      `${sha256}.mp4`,
+      `${sha256}.jpg`
+    ];
 
-    try {
-      // Fallback to old video path for backward compatibility
-      const oldObj = await this.r2.head(`videos/${sha256}.mp4`);
-      if (oldObj !== null) return true;
-    } catch {}
+    const results = await Promise.all(
+      paths.map(async (key) => {
+        try {
+          const obj = await this.r2.head(key);
+          return obj !== null;
+        } catch {
+          return false;
+        }
+      })
+    );
 
-    try {
-      // Fallback to root level mp4
-      const rootMp4 = await this.r2.head(`${sha256}.mp4`);
-      if (rootMp4 !== null) return true;
-    } catch {}
-
-    try {
-      // Fallback to root level jpg (thumbnails)
-      const rootJpg = await this.r2.head(`${sha256}.jpg`);
-      return rootJpg !== null;
-    } catch {
-      return false;
-    }
+    // Return true if any path exists
+    return results.some(exists => exists);
   }
 
   async writeBlob(sha256, stream, mimeType, owner = '', uid = '', proofModeVerified = null) {
@@ -82,41 +78,31 @@ export class R2BlobStorage {
       r2Options.range = range;
     }
 
-    // Try new path first (optimal)
-    let obj = await this.r2.get(`blobs/${sha256}`, r2Options);
-    let needsMigration = false;
-    let sourceKey = null;
+    // Define all possible paths in priority order
+    const paths = [
+      { key: `blobs/${sha256}`, isOptimal: true },
+      { key: `videos/${sha256}.mp4`, isOptimal: false },
+      { key: `${sha256}.mp4`, isOptimal: false },
+      { key: `${sha256}.jpg`, isOptimal: false }
+    ];
 
-    // Fallback to old path for backward compatibility
-    if (!obj) {
-      obj = await this.r2.get(`videos/${sha256}.mp4`, r2Options);
-      if (obj) {
-        needsMigration = true;
-        sourceKey = `videos/${sha256}.mp4`;
-      }
-    }
+    // Parallel lookup: try all paths simultaneously
+    const results = await Promise.all(
+      paths.map(async (path) => {
+        const obj = await this.r2.get(path.key, r2Options);
+        return obj ? { obj, path } : null;
+      })
+    );
 
-    // Fallback to root level (old old path)
-    if (!obj) {
-      obj = await this.r2.get(`${sha256}.mp4`, r2Options);
-      if (obj) {
-        needsMigration = true;
-        sourceKey = `${sha256}.mp4`;
-      }
-    }
-
-    // Fallback to root level .jpg (thumbnails stored by bunny-webhook)
-    if (!obj) {
-      obj = await this.r2.get(`${sha256}.jpg`, r2Options);
-      if (obj) {
-        needsMigration = true;
-        sourceKey = `${sha256}.jpg`;
-      }
-    }
-
-    if (!obj) {
+    // Find first successful result (in priority order)
+    const found = results.find(r => r !== null);
+    if (!found) {
       return null;
     }
+
+    const { obj, path } = found;
+    const needsMigration = !path.isOptimal;
+    const sourceKey = path.key;
 
     // Lazy migration: copy to optimal path for future requests
     // Only do this for full file reads (not range requests) to avoid partial copies

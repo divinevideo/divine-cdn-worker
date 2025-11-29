@@ -16,31 +16,36 @@ export class KVMetadataStore {
   }
 
   async hasBlob(sha256) {
-    // Try new format first
-    const blob = await this.kv.get(`blob:${sha256}`);
-    if (blob !== null) return true;
+    // Parallel lookup: check both formats simultaneously
+    const [newBlob, oldIndex] = await Promise.all([
+      this.kv.get(`blob:${sha256}`),
+      this.kv.get(`idx:sha256:${sha256}`)
+    ]);
 
-    // Fallback to old format for backward compatibility
-    const oldIndex = await this.kv.get(`idx:sha256:${sha256}`);
-    return oldIndex !== null;
+    return newBlob !== null || oldIndex !== null;
   }
 
   async getBlob(sha256, options = {}) {
     const { ctx } = options;
 
-    // Try new format first
-    const data = await this.kv.get(`blob:${sha256}`);
-    if (data) return JSON.parse(data);
+    // Parallel lookup: try new and old format simultaneously
+    const [newData, oldIndex] = await Promise.all([
+      this.kv.get(`blob:${sha256}`),
+      this.kv.get(`idx:sha256:${sha256}`)
+    ]);
+
+    // Prefer new format
+    if (newData) return JSON.parse(newData);
 
     // Fallback to old format for backward compatibility
-    const oldIndex = await this.kv.get(`idx:sha256:${sha256}`);
     if (oldIndex) {
       const parsedIndex = JSON.parse(oldIndex);
       let newFormatBlob = null;
+      let videoData = null;
 
       // Check if this is old VIDEO format: {"uid":"..."} -> video:{uid}
       if (parsedIndex.uid) {
-        const videoData = await this.kv.get(`video:${parsedIndex.uid}`);
+        videoData = await this.kv.get(`video:${parsedIndex.uid}`);
         if (videoData) {
           const video = JSON.parse(videoData);
           newFormatBlob = {
