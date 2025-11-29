@@ -25,7 +25,9 @@ export class KVMetadataStore {
     return oldIndex !== null;
   }
 
-  async getBlob(sha256) {
+  async getBlob(sha256, options = {}) {
+    const { ctx } = options;
+
     // Try new format first
     const data = await this.kv.get(`blob:${sha256}`);
     if (data) return JSON.parse(data);
@@ -45,10 +47,15 @@ export class KVMetadataStore {
           uploaded: Math.floor((video.createdAt || Date.now()) / 1000)
         };
 
-        // Lazy migration: write new format for future requests (fire-and-forget)
-        this.kv.put(`blob:${sha256}`, JSON.stringify(newFormatBlob))
+        // Lazy migration: write new format for future requests
+        const migrationPromise = this.kv.put(`blob:${sha256}`, JSON.stringify(newFormatBlob))
           .then(() => console.log(`[KV Migration] Migrated metadata for ${sha256.substring(0,8)}`))
           .catch(err => console.error(`[KV Migration] Failed:`, err));
+
+        // Ensure migration completes even after response is sent
+        if (ctx) {
+          ctx.waitUntil(migrationPromise);
+        }
 
         return newFormatBlob;
       }

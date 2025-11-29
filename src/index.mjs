@@ -317,7 +317,7 @@ async function handleGetBlob(sha256, isHead, blobStorage, metadataStore, req, en
     env.MEDIA_KV?.get(`duration-rejected:${sha256}`),
     env.MODERATION_KV?.get(`permanent-ban:${sha256}`),
     env.MODERATION_KV?.get(`age-restricted:${sha256}`),
-    metadataStore.getBlob(sha256)
+    metadataStore.getBlob(sha256, { ctx })
   ]);
 
   // Check for duration rejection (videos exceeding length limit)
