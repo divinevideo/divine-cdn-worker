@@ -70,21 +70,63 @@ export class R2BlobStorage {
       r2Options.range = range;
     }
 
-    // Try new path first
+    // Try new path first (optimal)
     let obj = await this.r2.get(`blobs/${sha256}`, r2Options);
+    let needsMigration = false;
+    let sourceKey = null;
 
     // Fallback to old path for backward compatibility
     if (!obj) {
       obj = await this.r2.get(`videos/${sha256}.mp4`, r2Options);
+      if (obj) {
+        needsMigration = true;
+        sourceKey = `videos/${sha256}.mp4`;
+      }
     }
 
     // Fallback to root level (old old path)
     if (!obj) {
       obj = await this.r2.get(`${sha256}.mp4`, r2Options);
+      if (obj) {
+        needsMigration = true;
+        sourceKey = `${sha256}.mp4`;
+      }
     }
 
     if (!obj) {
       return null;
+    }
+
+    // Lazy migration: copy to optimal path for future requests
+    // Only do this for full file reads (not range requests) to avoid partial copies
+    if (needsMigration && !range) {
+      // Clone the body for migration (need to read it twice)
+      const [bodyForResponse, bodyForMigration] = obj.body.tee();
+
+      // Fire-and-forget migration (don't block response)
+      this.r2.put(`blobs/${sha256}`, bodyForMigration, {
+        httpMetadata: {
+          contentType: obj.httpMetadata?.contentType || 'application/octet-stream',
+          cacheControl: 'public, max-age=31536000, immutable'
+        },
+        customMetadata: {
+          sha256: sha256,
+          migratedFrom: sourceKey,
+          migratedAt: new Date().toISOString()
+        }
+      }).then(() => {
+        console.log(`[Migration] Copied ${sourceKey} -> blobs/${sha256}`);
+      }).catch(err => {
+        console.error(`[Migration] Failed to copy ${sourceKey}:`, err);
+      });
+
+      return {
+        body: bodyForResponse,
+        size: obj.size,
+        type: obj.httpMetadata?.contentType || 'application/octet-stream',
+        etag: obj.etag,
+        range: obj.range
+      };
     }
 
     return {
