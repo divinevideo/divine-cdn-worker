@@ -1943,28 +1943,19 @@ async function handleLegacyUidUrl(uid, subpath, isHead, request, env) {
     }
   }
 
-  // For other legacy paths (manifests, etc), proxy to Stream
+  // For other legacy paths (manifests, m3u8, etc), redirect to Stream
+  // Redirect is better than proxy for streaming content - reduces latency and avoids worker overhead
   const streamDomain = env.STREAM_CUSTOMER_DOMAIN || 'customer-4c3uhd5qzuhwz9hu.cloudflarestream.com';
   const streamUrl = `https://${streamDomain}/${uid}/${subpath}`;
 
-  try {
-    const streamResponse = await fetch(streamUrl, {
-      method: request.method,
-      headers: request.headers
-    });
-
-    // Add CORS headers to proxied response
-    const headers = new Headers(streamResponse.headers);
-    headers.set('Access-Control-Allow-Origin', '*');
-
-    return new Response(streamResponse.body, {
-      status: streamResponse.status,
-      statusText: streamResponse.statusText,
-      headers
-    });
-  } catch (error) {
-    return new Response('Not Found', { status: 404 });
-  }
+  return new Response(null, {
+    status: 302,
+    headers: {
+      'Location': streamUrl,
+      'Access-Control-Allow-Origin': '*',
+      'Cache-Control': 'public, max-age=3600'  // Cache redirect for 1 hour
+    }
+  });
 }
 
 /**
