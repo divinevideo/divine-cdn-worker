@@ -16,6 +16,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Migrated from BunnyStream to Cloudflare Media Transformations for video processing
 - Cloudflare Stream manifest requests now redirect instead of proxying (reduced latency)
 
+### Performance
+- Parallelized KV and R2 fallback lookups (~900ms → ~200ms for legacy content)
+- Enabled Smart Placement for optimal D1/KV routing
+- Added lazy migration from legacy storage paths to optimal `blobs/` path
+
 ## [2025-11-28]
 
 ### Added
