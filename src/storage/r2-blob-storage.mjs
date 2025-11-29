@@ -62,7 +62,7 @@ export class R2BlobStorage {
   }
 
   async readBlob(sha256, options = {}) {
-    const { range } = options;
+    const { range, ctx } = options;
 
     // Build R2 get options
     const r2Options = {};
@@ -104,7 +104,7 @@ export class R2BlobStorage {
       const [bodyForResponse, bodyForMigration] = obj.body.tee();
 
       // Fire-and-forget migration (don't block response)
-      this.r2.put(`blobs/${sha256}`, bodyForMigration, {
+      const migrationPromise = this.r2.put(`blobs/${sha256}`, bodyForMigration, {
         httpMetadata: {
           contentType: obj.httpMetadata?.contentType || 'application/octet-stream',
           cacheControl: 'public, max-age=31536000, immutable'
@@ -119,6 +119,11 @@ export class R2BlobStorage {
       }).catch(err => {
         console.error(`[Migration] Failed to copy ${sourceKey}:`, err);
       });
+
+      // Ensure migration completes even after response is sent
+      if (ctx) {
+        ctx.waitUntil(migrationPromise);
+      }
 
       return {
         body: bodyForResponse,

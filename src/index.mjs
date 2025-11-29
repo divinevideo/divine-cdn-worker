@@ -269,7 +269,7 @@ export default {
           }
 
           // No transformation params - serve original blob
-          const response = await handleGetBlob(sha256, method === 'HEAD', blobStorage, metadataStore, request, env);
+          const response = await handleGetBlob(sha256, method === 'HEAD', blobStorage, metadataStore, request, env, ctx);
           return await cacheAndReturn(response, request, url);
         }
       }
@@ -310,7 +310,7 @@ export default {
 /**
  * Handle GET/HEAD blob request
  */
-async function handleGetBlob(sha256, isHead, blobStorage, metadataStore, req, env) {
+async function handleGetBlob(sha256, isHead, blobStorage, metadataStore, req, env, ctx) {
   // Parallelize all KV lookups for latency reduction
   // These checks are independent and can run concurrently
   const [durationRejection, permanentBan, ageRestricted, metadata] = await Promise.all([
@@ -450,7 +450,8 @@ async function handleGetBlob(sha256, isHead, blobStorage, metadataStore, req, en
 
     // Fetch only the requested range from R2
     blob = await blobStorage.readBlob(sha256, {
-      range: { offset: start, length: end - start + 1 }
+      range: { offset: start, length: end - start + 1 },
+      ctx
     });
 
     if (!blob) {
@@ -477,7 +478,7 @@ async function handleGetBlob(sha256, isHead, blobStorage, metadataStore, req, en
   }
 
   // Regular GET request - fetch entire blob
-  blob = await blobStorage.readBlob(sha256);
+  blob = await blobStorage.readBlob(sha256, { ctx });
   if (!blob) {
     return new Response('Not Found', { status: 404 });
   }
