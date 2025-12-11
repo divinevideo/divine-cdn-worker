@@ -9,6 +9,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## [2025-11-29]
 
 ### Added
+- BUD-04 blob mirroring support (`PUT /mirror` endpoint)
 - In-memory MP4 duration checking to reject videos longer than 6 seconds at upload time
 - NIP-96 compatible query parameters for Media Transformations (`?w=`, `?thumb`, `?audio`)
 

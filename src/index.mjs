@@ -279,6 +279,11 @@ export default {
         return await handleUploadBlob(request, blobStorage, metadataStore, env, ctx);
       }
 
+      // PUT /mirror - Mirror blob from remote URL (BUD-04)
+      if (method === 'PUT' && url.pathname === '/mirror') {
+        return await handleMirrorBlob(request, blobStorage, metadataStore, env, ctx);
+      }
+
       // GET /list/<pubkey> - List user's blobs
       if (method === 'GET') {
         const match = url.pathname.match(/^\/list\/([a-f0-9]{64})$/);
@@ -838,6 +843,124 @@ async function handleUploadBlob(request, blobStorage, metadataStore, env, ctx) {
 async function handleListBlobs(pubkey, metadataStore) {
   const blobs = await metadataStore.getBlobsForPubkey(pubkey);
   return jsonResponse(200, blobs);
+}
+
+/**
+ * Handle mirror blob request (BUD-04)
+ * Fetches a blob from a remote URL and stores it locally
+ */
+async function handleMirrorBlob(request, blobStorage, metadataStore, env, ctx) {
+  // Verify authentication with BUD-01 action validation (optional but recommended)
+  const auth = await verifyBlossomAuth(request, env, { action: 'upload' });
+
+  // Parse JSON body
+  let body;
+  try {
+    body = await request.json();
+  } catch (e) {
+    return jsonResponse(400, { error: 'invalid_json', message: 'Request body must be valid JSON' });
+  }
+
+  // Validate URL field exists
+  if (!body.url) {
+    return jsonResponse(400, { error: 'missing_url', message: 'Missing required "url" field' });
+  }
+
+  // Validate URL format
+  let remoteUrl;
+  try {
+    remoteUrl = new URL(body.url);
+    if (!['http:', 'https:'].includes(remoteUrl.protocol)) {
+      throw new Error('Invalid protocol');
+    }
+  } catch (e) {
+    return jsonResponse(400, { error: 'invalid_url', message: 'Invalid URL format' });
+  }
+
+  // Extract expected hash from auth event's x tag (if authenticated)
+  let expectedHash = null;
+  if (auth && auth.event && auth.event.tags) {
+    const xTag = auth.event.tags.find(t => t[0] === 'x');
+    if (xTag && xTag[1]) {
+      expectedHash = xTag[1].toLowerCase();
+    }
+  }
+
+  // Fetch the remote blob
+  let remoteResponse;
+  try {
+    remoteResponse = await fetch(remoteUrl.toString(), {
+      headers: {
+        'User-Agent': 'Blossom-Mirror/1.0'
+      }
+    });
+  } catch (e) {
+    return jsonResponse(502, { error: 'fetch_failed', message: `Failed to fetch remote URL: ${e.message}` });
+  }
+
+  if (!remoteResponse.ok) {
+    return jsonResponse(502, { error: 'remote_error', message: `Remote server returned ${remoteResponse.status}` });
+  }
+
+  // Read the blob data
+  const blobData = await remoteResponse.arrayBuffer();
+  const blobBytes = new Uint8Array(blobData);
+
+  // Calculate SHA-256 hash
+  const hashBuffer = await crypto.subtle.digest('SHA-256', blobBytes);
+  const hashArray = Array.from(new Uint8Array(hashBuffer));
+  const sha256 = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+
+  // Verify hash matches expected hash (if provided in auth event)
+  if (expectedHash && sha256 !== expectedHash) {
+    return jsonResponse(400, {
+      error: 'hash_mismatch',
+      message: `Downloaded blob hash (${sha256}) does not match expected hash (${expectedHash})`
+    });
+  }
+
+  // Detect content type
+  const contentType = remoteResponse.headers.get('content-type') || 'application/octet-stream';
+
+  // Check if blob already exists
+  const existing = await metadataStore.getBlob(sha256);
+  if (existing) {
+    // Blob already exists, just return the descriptor
+    return jsonResponse(200, {
+      sha256,
+      size: existing.size,
+      type: existing.type,
+      uploaded: existing.uploaded
+    });
+  }
+
+  // Store the blob
+  const pubkey = auth ? auth.pubkey : '';
+  const uid = crypto.randomUUID().replace(/-/g, '');
+
+  await blobStorage.writeBlob(sha256, blobBytes, contentType, pubkey, uid);
+
+  // Store metadata
+  const uploaded = Math.floor(Date.now() / 1000);
+  await metadataStore.addBlob({
+    sha256,
+    size: blobBytes.length,
+    type: contentType,
+    uploaded
+  });
+
+  // Add ownership if authenticated
+  if (auth) {
+    await metadataStore.addBlobOwner(sha256, auth.pubkey);
+  }
+
+  // Return blob descriptor
+  return jsonResponse(200, {
+    sha256,
+    size: blobBytes.length,
+    type: contentType,
+    uploaded
+  });
 }
 
 /**
