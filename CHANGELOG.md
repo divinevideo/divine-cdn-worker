@@ -6,6 +6,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Changed
+- Extended auth expiration grace period to 5 minutes for slow uploads
+
 ## [2025-11-29]
 
 ### Added

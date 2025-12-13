@@ -14,6 +14,7 @@ export function validateBud01Event(event, options = {}) {
   const { action, serverHost } = options;
   const now = Math.floor(Date.now() / 1000);
   const CLOCK_SKEW_TOLERANCE = 60; // 60 seconds tolerance for clock skew
+  const EXPIRATION_GRACE_PERIOD = 300; // 5 minutes grace for slow uploads
 
   // Validate kind is 24242 (Blossom, not NIP-98's 27235)
   if (event.kind !== 24242) {
@@ -49,12 +50,12 @@ export function validateBud01Event(event, options = {}) {
     };
   }
 
-  // Validate expiration is in the future
-  if (expiration <= now) {
+  // Validate expiration (with grace period for slow uploads)
+  if (expiration <= now - EXPIRATION_GRACE_PERIOD) {
     return {
       valid: false,
       error: 'expired',
-      message: `Event has expired at ${new Date(expiration * 1000).toISOString()}`
+      message: `Event has expired at ${new Date(expiration * 1000).toISOString()} (grace period: ${EXPIRATION_GRACE_PERIOD}s)`
     };
   }
 
