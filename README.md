@@ -1,5 +1,10 @@
 # Blossom SDK Worker
 
+> [!WARNING]
+> **Deprecated project.** `divine-cdn-worker` has been replaced by **`divine-blossom`** and is no longer the active media relay implementation.
+>
+> Use `divine-blossom` for current development and production changes.
+
 Experimental Cloudflare Worker implementation using `blossom-server-sdk`.
 
 ## Overview
